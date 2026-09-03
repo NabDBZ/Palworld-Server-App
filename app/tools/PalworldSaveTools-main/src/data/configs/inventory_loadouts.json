@@ -1,0 +1,108 @@
+{
+  "MetaInventory": {
+    "regular": [
+      {
+        "id": "ElectricArcAssaultRifle_5",
+        "qty": 1,
+        "name": "Plasma Rifle"
+      },
+      {
+        "id": "ElectricArcAssaultRifleBullet",
+        "qty": 9999,
+        "name": "Plasma Rifle Ammo"
+      },
+      {
+        "id": "PalSphere_Ancient_2",
+        "qty": 9999,
+        "name": "Ancient Sphere"
+      },
+      {
+        "id": "DroneLauncher_5",
+        "qty": 1,
+        "name": "Drone Launcher"
+      },
+      {
+        "id": "AncientHelmet_5",
+        "qty": 1,
+        "name": "Ancient Helm"
+      },
+      {
+        "id": "Shield_07",
+        "qty": 1,
+        "name": "Shield 07"
+      },
+      {
+        "id": "AncientArmorCold_5",
+        "qty": 1,
+        "name": "Cold-Resistant Ancient Armor"
+      },
+      {
+        "id": "GrapplingGun5",
+        "qty": 1,
+        "name": "Ultra Grappling Gun"
+      },
+      {
+        "id": "BeamLauncher_5",
+        "qty": 1,
+        "name": "Beam Launcher"
+      },
+      {
+        "id": "Bat3_5",
+        "qty": 1,
+        "name": "Metal Bat"
+      },
+      {
+        "id": "Accessory_NonkChecker_1",
+        "qty": 1,
+        "name": "Pal Tamer's Glasses"
+      },
+      {
+        "id": "Accessory_TalentChecker",
+        "qty": 1,
+        "name": "Ability Glasses"
+      },
+      {
+        "id": "WingGlider",
+        "qty": 1,
+        "name": "Wing Pack"
+      },
+      {
+        "id": "WingGlider_Fuel",
+        "qty": 9999,
+        "name": "Wing Cell"
+      },
+      {
+        "id": "Cake05",
+        "qty": 9999,
+        "name": "Special Cake"
+      },
+      {
+        "id": "Curry",
+        "qty": 9999,
+        "name": "Mammorest Curry"
+      }
+    ],
+    "key_items": [
+      {
+        "id": "AdditionalInventory_001",
+        "qty": 1,
+        "name": "Expanded Inventory 1"
+      },
+      {
+        "id": "AdditionalInventory_002",
+        "qty": 1,
+        "name": "Expanded Inventory 2"
+      },
+      {
+        "id": "AdditionalInventory_003",
+        "qty": 1,
+        "name": "Expanded Inventory 3"
+      },
+      {
+        "id": "AdditionalInventory_004",
+        "qty": 1,
+        "name": "Expanded Inventory 4"
+      }
+    ]
+  }
+}

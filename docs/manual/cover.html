@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Manuel Utilisateur - Palworld Server Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: 794px 1123px; margin: 0; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 794px; height: 1123px;
+    background: #ffffff;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    color: #1a1917;
+  }
+  .cover { position: relative; width: 794px; height: 1123px; }
+
+  /* Layer 1 - background grid (2% opacity), clipped */
+  .layer1 {
+    position: absolute; inset: 0; overflow: hidden; z-index: 1;
+    background-image:
+      repeating-linear-gradient(to right, rgba(32,117,145,0.05) 0, rgba(32,117,145,0.05) 0.5px, transparent 0.5px, transparent 50px),
+      repeating-linear-gradient(to bottom, rgba(32,117,145,0.05) 0, rgba(32,117,145,0.05) 0.5px, transparent 0.5px, transparent 50px);
+  }
+
+  /* Layer 2 - structure */
+  .layer2 { position: absolute; inset: 0; z-index: 2; }
+  .anchor-line {
+    position: absolute; left: 95px; top: 112px; bottom: 112px;
+    width: 8px; background: #207591;
+  }
+  .meta-sep {
+    position: absolute; left: 165px; top: 778px;
+    width: 318px; height: 1.5px;
+    background: rgba(32,117,145,0.4);
+  }
+
+  /* Layer 3 - content */
+  .layer3 { position: absolute; inset: 0; z-index: 3; }
+  .kicker {
+    position: absolute; left: 165px; top: 168px;
+    font-size: 21px; font-weight: 400; letter-spacing: 4px;
+    text-transform: uppercase; color: rgba(26,25,23,0.6);
+  }
+  .hero {
+    position: absolute; left: 165px; top: 300px; width: 560px;
+    font-family: 'Archivo Black', 'Arial Black', sans-serif;
+    font-size: 76px; line-height: 1.15; color: #1a1917;
+  }
+  .hero .accent { color: #207591; }
+  .summary {
+    position: absolute; left: 165px; top: 562px; width: 476px;
+    font-size: 22px; line-height: 1.6; color: rgba(26,25,23,0.85);
+  }
+  .meta {
+    position: absolute; left: 165px; top: 826px;
+    font-size: 24px; line-height: 1.7; color: #1a1917;
+  }
+  .meta .sub { font-size: 19px; color: #86847c; }
+  .footer {
+    position: absolute; left: 165px; bottom: 64px;
+    font-size: 16px; letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(26,25,23,0.6);
+  }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="layer1"></div>
+    <div class="layer2">
+      <div class="anchor-line"></div>
+      <div class="meta-sep"></div>
+    </div>
+    <div class="layer3">
+      <div class="kicker">Manuel utilisateur</div>
+      <div class="hero">Palworld<br>Server <span class="accent">Manager</span></div>
+      <div class="summary">
+        Le guide complet de ton serveur privé : installation, réglages du
+        monde, sauvegardes, mises à jour, cadeaux aux joueurs et dépannage —
+        expliqué pas à pas, sans jargon.
+      </div>
+      <div class="meta">
+        Version 1.0<br>
+        <span class="sub">Septembre 2026 &nbsp;·&nbsp; Windows 10 / 11 &nbsp;·&nbsp; sans mods</span>
+      </div>
+      <div class="footer">Guide communautaire</div>
+    </div>
+  </div>
+</body>
+</html>

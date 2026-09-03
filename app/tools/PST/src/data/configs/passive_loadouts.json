@@ -1,0 +1,98 @@
+{
+  "Speedster": [
+    "WorldTree_MoveSpeed",
+    "MoveSpeed_up_3",
+    "MoveSpeed_up_2",
+    "Legend"
+  ],
+  "Immortality": [
+    "worldtree_atk",
+    "worldtree_atk_def",
+    "pal_allattack_up3",
+    "mutationpal_immortal"
+  ],
+  "Serenity Wrath": [
+    "cooltimereduction_up_1",
+    "legend",
+    "pal_allattack_up3",
+    "worldtree_atk"
+  ],
+  "Player booster": [
+    "traineratk_up_1",
+    "trainerdef_up_1",
+    "mutationpal_immortal",
+    "mutationpal_mutant"
+  ],
+  "Player $$$": [
+    "traineratk_up_1",
+    "trainerdef_up_1",
+    "saleprice_up_1",
+    "saleprice_up_2"
+  ],
+  "Aegis": [
+    "mutationpal_immortal",
+    "worldtree_def",
+    "legend",
+    "pal_allattack_up3"
+  ],
+  "Element Swap Mounts": [
+    "worldtree_movespeed",
+    "movespeed_up_3",
+    "deffence_up3",
+    "mutationpal_mutant"
+  ],
+  "Immortal Serenity": [
+    "mutationpal_immortal",
+    "cooltimereduction_up_1",
+    "legend",
+    "pal_allattack_up3"
+  ],
+  "Immortal Wrath": [
+    "mutationpal_immortal",
+    "worldtree_atk",
+    "legend",
+    "pal_allattack_up3"
+  ],
+  "Fire Raid Army": [
+    "mutationpal_immortal",
+    "eternalflame",
+    "legend",
+    "pal_allattack_up3"
+  ],
+  "Ice Raid Army": [
+    "mutationpal_immortal",
+    "nushi",
+    "legend",
+    "witch"
+  ],
+  "No Legend Raid Army": [
+    "mutationpal_immortal",
+    "cooltimereduction_up_1",
+    "pal_allattack_up3",
+    "worldtree_def"
+  ],
+  "Lovander/Felbat": [
+    "trainerdef_up_1",
+    "traineratk_up_1",
+    "legend",
+    "worldtree_def"
+  ],
+  "No Flinch Tower": [
+    "pal_allattack_up3",
+    "cooltimereduction_up_1",
+    "deffence_up3",
+    "mutationpal_immortal"
+  ],
+  "Max Work Speed Dark": [
+    "worldtree_craftspeed",
+    "craftspeed_up3",
+    "craftspeed_up2",
+    "pal_corporateslave"
+  ],
+  "Max Work Speed Vamp": [
+    "worldtree_craftspeed",
+    "craftspeed_up3",
+    "craftspeed_up2",
+    "vampire"
+  ]
+}

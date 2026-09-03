@@ -1,0 +1,282 @@
+{
+  "MedRack": {
+    "regular": [
+      {
+        "id": "Herbs",
+        "qty": 9999,
+        "name": "Low Grade Medical Supplies"
+      },
+      {
+        "id": "LuxuryMedicines",
+        "qty": 9999,
+        "name": "High Grade Medical Supplies"
+      },
+      {
+        "id": "MindControlDrug",
+        "qty": 9999,
+        "name": "Mind Control Meds"
+      },
+      {
+        "id": "Medicines",
+        "qty": 9999,
+        "name": "Medical Supplies"
+      }
+    ],
+    "key_items": []
+  },
+  "GuildChest": {
+    "regular": [
+      {
+        "id": "Egg",
+        "qty": 8537,
+        "name": "Egg"
+      },
+      {
+        "id": "Milk",
+        "qty": 11384,
+        "name": "Milk"
+      },
+      {
+        "id": "Wood",
+        "qty": 859,
+        "name": "Wood"
+      },
+      {
+        "id": "Wood_Fine",
+        "qty": 3330,
+        "name": "High Quality Wood"
+      },
+      {
+        "id": "Wood_WorldTree",
+        "qty": 9999,
+        "name": "Mythical Wood"
+      },
+      {
+        "id": "Fiber",
+        "qty": 3414,
+        "name": "Fiber"
+      },
+      {
+        "id": "Stone",
+        "qty": 4275,
+        "name": "Stone"
+      },
+      {
+        "id": "Pal_crystal_S",
+        "qty": 19998,
+        "name": "Paldium Fragment"
+      },
+      {
+        "id": "CopperOre",
+        "qty": 1293,
+        "name": "Ore"
+      },
+      {
+        "id": "Coal",
+        "qty": 14486,
+        "name": "Coal"
+      },
+      {
+        "id": "Sulfur",
+        "qty": 5565,
+        "name": "Sulfur"
+      },
+      {
+        "id": "CrudeOil",
+        "qty": 281,
+        "name": "Crude Oil"
+      },
+      {
+        "id": "Chromium",
+        "qty": 95,
+        "name": "Chromite"
+      },
+      {
+        "id": "NightStone",
+        "qty": 855,
+        "name": "Nightstar Sand"
+      },
+      {
+        "id": "MeteorDrop",
+        "qty": 323,
+        "name": "Meteorite Fragment"
+      },
+      {
+        "id": "SkyIslandOre",
+        "qty": 4244,
+        "name": "Soralite"
+      },
+      {
+        "id": "Wool",
+        "qty": 149,
+        "name": "Wool"
+      },
+      {
+        "id": "Leather",
+        "qty": 4615,
+        "name": "Leather"
+      },
+      {
+        "id": "bone",
+        "qty": 568,
+        "name": "bone"
+      },
+      {
+        "id": "Horn",
+        "qty": 211,
+        "name": "Horn"
+      },
+      {
+        "id": "ElectricOrgan",
+        "qty": 3328,
+        "name": "Electric Organ"
+      },
+      {
+        "id": "Venom",
+        "qty": 5402,
+        "name": "Venom Gland"
+      },
+      {
+        "id": "FireOrgan",
+        "qty": 4127,
+        "name": "Flame Organ"
+      },
+      {
+        "id": "IceOrgan",
+        "qty": 6527,
+        "name": "Ice Organ"
+      },
+      {
+        "id": "PalFluid",
+        "qty": 4455,
+        "name": "Aquatic Pal Fluids"
+      },
+      {
+        "id": "PalOil",
+        "qty": 315,
+        "name": "High Quality Pal Oil"
+      },
+      {
+        "id": "PalDarkParts",
+        "qty": 451,
+        "name": "Dark Fragment"
+      },
+      {
+        "id": "PalItem_RaijinDaughter",
+        "qty": 11,
+        "name": "Dazzi Cloud"
+      },
+      {
+        "id": "PalCrystal_Ex",
+        "qty": 9999,
+        "name": "Ancient Civilization Parts"
+      },
+      {
+        "id": "AncientParts2",
+        "qty": 9999,
+        "name": "Ancient Civilization Core"
+      },
+      {
+        "id": "Cloth",
+        "qty": 463,
+        "name": "Cloth"
+      },
+      {
+        "id": "Cloth2",
+        "qty": 1449,
+        "name": "High Quality Cloth"
+      },
+      {
+        "id": "HighGrade_Processed_Wood",
+        "qty": 159,
+        "name": "High Quality Wooden Board"
+      },
+      {
+        "id": "Polymer",
+        "qty": 1973,
+        "name": "Polymer"
+      },
+      {
+        "id": "Cement",
+        "qty": 130,
+        "name": "Cement"
+      },
+      {
+        "id": "Bio_Coolant",
+        "qty": 3569,
+        "name": "Bio Coolant EX"
+      },
+      {
+        "id": "Corrosive_Solvent",
+        "qty": 1461,
+        "name": "Corrosive Solvent"
+      },
+      {
+        "id": "Bio_Battery",
+        "qty": 2858,
+        "name": "Bio Battery"
+      },
+      {
+        "id": "Computer",
+        "qty": 8,
+        "name": "Computer"
+      },
+      {
+        "id": "Charcoal",
+        "qty": 303,
+        "name": "Charcoal"
+      },
+      {
+        "id": "CopperIngot",
+        "qty": 173,
+        "name": "Ingot"
+      },
+      {
+        "id": "IronIngot",
+        "qty": 245,
+        "name": "Refined Ingot"
+      },
+      {
+        "id": "StealIngot",
+        "qty": 17,
+        "name": "Pal Metal Ingot"
+      },
+      {
+        "id": "ManganeseIngot",
+        "qty": 360,
+        "name": "Coralum Ingot"
+      },
+      {
+        "id": "PalUpgradeStone",
+        "qty": 2463,
+        "name": "Small Pal Soul"
+      },
+      {
+        "id": "PalUpgradeStone2",
+        "qty": 1421,
+        "name": "Medium Pal Soul"
+      },
+      {
+        "id": "PalUpgradeStone3",
+        "qty": 631,
+        "name": "Large Pal Soul"
+      },
+      {
+        "id": "PalUpgradeStone4",
+        "qty": 9077,
+        "name": "Giant Pal Soul"
+      },
+      {
+        "id": "SkillCard_BlastCanon",
+        "qty": 9999,
+        "name": "Dragon Skill Fruit: Blast Cannon"
+      },
+      {
+        "id": "SkillCard_BeamSlicer",
+        "qty": 9999,
+        "name": "Dragon Skill Fruit: Beam Slicer"
+      }
+    ],
+    "key_items": []
+  }
+}

@@ -1,0 +1,9 @@
+{
+    "games": [
+        {
+            "name": "Palworld",
+            "package": "PocketpairInc.Palworld_ad4psfrxyesvt",
+            "handler": "palworld"
+        }
+    ]
+}
