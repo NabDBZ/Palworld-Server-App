@@ -28,8 +28,13 @@ directly into the world save — no mods required.
 | 📅 **Runs itself** | 24/7 or schedule windows, daily restart, crash watchdog with auto-restart and diagnosis |
 | 💾 **Backups that restore** | timestamped zip backups, one-click restore, integrity check, optional offsite copy |
 | 🔄 **Steam updates** | one-button SteamCMD update with live log; update badge when Pocketpair ships a patch |
-| 🎁 **Gift wizard (no mods)** | gold, 1 100+ items and 600+ Pals with their real game artwork, written safely into the save (auto-backup + auto-restore on failure) |
-| 👥 **Guild dashboard** | playtime, sessions timeline, inventories, guild card export, Steam avatars, weekly recap, trophies |
+| 🎁 **Gift wizard (no mods)** | gold, 1 100+ items and 600+ Pals with their real game artwork, written safely into the save (auto-backup + auto-restore on failure) — with element filters and multi-copy gifting |
+| ⚔️ **One-click events** | Raid Night (boss Pal for the whole guild), Gold Rain, Loot Drop — announced in-game and on Discord |
+| 👥 **Guild dashboard** | playtime, sessions timeline, inventories, guild card export, Steam avatars (with Steam/Console badges), weekly recap, trophies |
+| 🗺️ **Live map** | base positions plus near-live player dots refreshed every ~75 s while the server runs |
+| 📊 **Statistics page** | busiest hours, daily player peaks, weekly uptime %, longest uninterrupted run |
+| 📱 **Phone status page** | tiny token-protected web page to check the server from your phone |
+| ⬆️ **Self-update check** | the app watches its own GitHub releases and tells you when a new version is out |
 | 🔔 **Discord webhooks** | announces joins, updates, gifts, weekly recap; optional automatic password rotation |
 | 🇫🇷 **Bilingual** | full French / English interface |
 

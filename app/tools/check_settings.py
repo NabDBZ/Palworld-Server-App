@@ -6,14 +6,11 @@ N'ecrit JAMAIS dans les fichiers."""
 import io
 import os
 import re
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))
 import palworld_control as pc
 
 INI = pc.INI_PATH
-DEFAULT = os.path.join(pc.BASE, "server", "DefaultPalWorldSettings.ini")
+DEFAULT = r"E:\PalworldServer\server\DefaultPalWorldSettings.ini"
 
 print("=== 1. Syntaxe du fichier ===")
 txt = io.open(INI, encoding="utf-8").read()

@@ -68,7 +68,7 @@ def on_page(canvas, doc):
     canvas.line(MARGIN, 1.25 * cm, PAGE_W - MARGIN, 1.25 * cm)
     canvas.setFont("Calibri", 7.5)
     canvas.setFillColor(TEXT_MUTED)
-    canvas.drawString(MARGIN, 0.9 * cm, "Palworld Server Manager  ·  v1.0")
+    canvas.drawString(MARGIN, 0.9 * cm, "Palworld Server Manager  ·  v1.1")
     canvas.drawRightString(PAGE_W - MARGIN, 0.9 * cm, "Page %d" % doc.page)
     canvas.restoreState()
 
@@ -262,7 +262,7 @@ story.extend(callout(
 
 story.extend(h1("4.  Tour de l'interface"))
 story.append(body(
-    "La fenêtre s'organise autour d'une barre latérale et de six pages. En "
+    "La fenêtre s'organise autour d'une barre latérale et de sept pages. En "
     "haut à droite : pastille d'état du serveur (vert = en ligne), sélecteur "
     "de thème sombre/clair, et badge orange « Mise à jour dispo » le cas "
     "échéant."))
@@ -270,7 +270,7 @@ story.extend(fig("serveur.png",
                  "La page Serveur et la barre latérale : pages, état en "
                  "direct, version et bouton Éteindre l'appli."))
 story.extend(bullets([
-    "<b>Barre latérale</b> — les six pages (Ctrl+1 à Ctrl+6), point d'état, "
+    "<b>Barre latérale</b> — les sept pages (Ctrl+1 à Ctrl+7), point d'état, "
     "version, bouton d'extinction complète.",
     "<b>Barre du haut</b> — titre de la page, pastille d'état, thème.",
     "<b>Palette de commandes (Ctrl+K)</b> — lance n'importe quelle action "
@@ -298,12 +298,16 @@ story.append(body(
     "Temps de jeu par joueur avec frise des sessions, inventaires (or et "
     "objets principaux), carte de guilde exportable en image, et actualités "
     "Palworld officielles. Un récapitulatif hebdomadaire peut être envoyé "
-    "automatiquement sur Discord."))
+    "automatiquement sur Discord. La carte des bases affiche aussi les "
+    "positions des joueurs, rafraîchies toutes les 75 secondes pendant "
+    "que le serveur tourne."))
 story.extend(h2("5.3  Cadeaux et événements"))
 story.append(body(
     "La carte « Cadeaux et événements » ouvre l'assistant visuel du "
-    "chapitre 11 et permet de programmer des cadeaux quotidiens "
-    "automatiques."))
+    "chapitre 12 et permet de programmer des cadeaux quotidiens "
+    "automatiques. Les événements en un clic — Nuit de raid (un Pal boss "
+    "pour toute la guilde), Pluie d'or, Largage de butin — lancent la "
+    "fête en deux clics."))
 
 story.extend(h1("6.  La page Réglages"))
 story.append(body(
@@ -374,6 +378,8 @@ story.extend(bullets([
     "<b>Clé API Steam</b> — gratuite sur steamcommunity.com/dev/apikey "
     "(domaine : localhost), sert aux avatars des joueurs.",
     "<b>Trophées</b> — l'étagère célèbre tes exploits d'hébergeur.",
+    "<b>Page d'état téléphone</b> — une page web protégée par jeton pour "
+    "suivre l'état du serveur depuis un téléphone (même Wi-Fi).",
     "<b>Exporter / Importer</b> — sauvegarde de toute la configuration.",
 ]))
 story.extend(fig("preferences.png",
@@ -388,7 +394,17 @@ story.append(body(
     "diagnostic."))
 story.extend(fig("console.png", "La page Console : la sortie live du serveur."))
 
-story.extend(h1("11.  Offrir des cadeaux (or, objets, Pals)"))
+story.extend(h1("11.  La page Statistiques"))
+story.append(body(
+    "Trois tableaux de bord résument la vie du serveur : l'activité par "
+    "heure (quand tes amis jouent, sur 7 jours), le pic de joueurs par "
+    "jour (14 jours), et la fiabilité — pourcentage de disponibilité "
+    "hebdomadaire et plus longue série sans interruption. Les données "
+    "s'écrivent toutes seules pendant que l'appli tourne."))
+story.extend(fig("stats.png", "La page Statistiques : activité, pics et "
+                 "fiabilité."))
+
+story.extend(h1("12.  Offrir des cadeaux (or, objets, Pals)"))
 story.append(body(
     "L'assistant visuel écrit des cadeaux directement dans la sauvegarde du "
     "monde, sans mod : de l'or, plus de 1 100 objets (vraies icônes du jeu, "
@@ -400,8 +416,8 @@ story.extend(bullets([
     "<b>Destinataire</b> — un joueur précis ou toute la guilde.",
     "<b>Cherche et clique</b> — onglets Pals / Objets, recherche par nom "
     "(français ou identifiant) ; les tuiles cliquées rejoignent le panier.",
-    "<b>Règle les montants</b> — niveau d'un Pal (la zone à chiffres), "
-    "quantité d'un objet, montant d'or.",
+    "<b>Règle les montants</b> — niveau d'un Pal, nombre de copies "
+    "(jusqu'à 10 par espèce), quantité d'un objet, montant d'or.",
     "<b>« Offrir maintenant »</b> — sauvegarde de sécurité, arrêt du "
     "serveur environ une minute le temps d'écrire le cadeau, relance, puis "
     "annonce aux joueurs (et sur Discord si configuré).",
@@ -426,10 +442,10 @@ story.append(body(
     "« PalSphere x20, Arrow x100 ») et un Pal — chaque jour, tous les "
     "membres de la guilde le reçoivent automatiquement."))
 
-story.extend(h1("12.  Raccourcis clavier"))
+story.extend(h1("13.  Raccourcis clavier"))
 story.extend(table(
     ["Raccourci", "Action"],
-    [["Ctrl + 1 … Ctrl + 6", "Aller directement à une page"],
+    [["Ctrl + 1 … Ctrl + 7", "Aller directement à une page"],
      ["Ctrl + K", "Palette de commandes"],
      ["F1 ou touche ?", "Aide des raccourcis"],
      ["Double-clic sur l'icône du tray", "Rouvrir la fenêtre réduite"],
@@ -438,7 +454,7 @@ story.extend(table(
       "l'application"]],
     [0.42, 0.58]))
 
-story.extend(h1("13.  FAQ et dépannage"))
+story.extend(h1("14.  FAQ et dépannage"))
 faq = [
     ("Mes amis n'arrivent pas à rejoindre.",
      "Vérifie dans l'ordre : pastille verte dans l'appli ; correctif "
@@ -469,7 +485,7 @@ for q, a in faq:
                   KeepTogether([Paragraph("<b>%s</b>" % q, S["h3"]),
                                 Paragraph(a, S["body"])])])
 
-story.extend(h1("14.  Annexe : emplacements utiles"))
+story.extend(h1("15.  Annexe : emplacements utiles"))
 story.extend(table(
     ["Élément", "Emplacement / valeur"],
     [["Application", "<dossier d'installation>\\PalworldControl.exe"],
@@ -486,7 +502,7 @@ story.extend(table(
     [0.34, 0.66]))
 story.append(Spacer(1, 10))
 story.append(body(
-    "Manuel de la version 1.0 — septembre 2026. Outil communautaire non "
+    "Manuel de la version 1.1 — septembre 2026. Outil communautaire non "
     "affilié à Pocketpair. Bon jeu, et prends soin de tes Pals."))
 
 doc = TocDocTemplate(

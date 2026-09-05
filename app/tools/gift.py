@@ -203,9 +203,21 @@ def main():
                 set_leaf(v["Level"], int(spec["lv"]))
             wsd["CharacterSaveParameterMap"]["value"].append(entry)
 
+            # extra copies of the same species ("n" > 1): each gets its own
+            # fresh InstanceId + storage slot — never share identities
+            for _n in range(int(spec.get("n") or 1) - 1):
+                inst2 = str(uuid.uuid4())
+                slot2 = copy.deepcopy(new_slot)
+                slot2["RawData"]["value"]["instance_id"] = inst2
+                svals.append(slot2)
+                entry2 = copy.deepcopy(entry)
+                entry2["key"]["InstanceId"]["value"] = inst2
+                wsd["CharacterSaveParameterMap"]["value"].append(entry2)
+
         summary.append({"uid": uid, "gold": gold,
                         "items": gift.get("items") or [],
-                        "pals": [p.get("id") for p in gift.get("pals") or []]})
+                        "pals": ["%s x%d" % (p.get("id"), int(p.get("n") or 1))
+                                 for p in gift.get("pals") or []]})
 
     # safety copy, then write
     shutil.copy2(level_path, level_path + ".giftbak")

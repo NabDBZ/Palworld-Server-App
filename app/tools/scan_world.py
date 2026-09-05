@@ -13,6 +13,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "PalworldSaveTools-main", "src"))
 sys.path.insert(0, os.path.join(_HERE, "PST"))
 sys.path.insert(0, os.path.join(_HERE, "PST", "lib"))
+import time
 
 sys.path.insert(0, r"E:\PalworldServer\app\tools\PalworldSaveTools-main\src")
 sys.path.insert(0, r"E:\PalworldServer\app\tools\PST\lib")
@@ -21,6 +22,23 @@ sys.path.insert(0, r"E:\PalworldServer\app\tools\PST")
 from palsav.io import load_sav
 
 world = sys.argv[1]
+if "--positions" in sys.argv:
+    # light mode: player last-known positions from Players/*.sav only
+    out = []
+    pdir = os.path.join(world, "Players")
+    for fn in os.listdir(pdir):
+        if not fn.endswith(".sav") or fn.endswith("_dps.sav")                 or fn.startswith("00000000000000000000000000000001"):
+            continue
+        try:
+            d = load_sav(os.path.join(pdir, fn))
+            t = d.properties["SaveData"]["value"]["LastTransform"]                 ["value"]["Translation"]["value"]
+            out.append({"uid": fn[:-4].lower(), "x": t.get("x", 0),
+                        "y": t.get("y", 0)})
+        except Exception:
+            continue
+    print(json.dumps({"ts": time.time(), "players": out}))
+    sys.exit(0)
+
 lvl = load_sav(os.path.join(world, "Level.sav"))
 wsd = lvl.properties["worldSaveData"]["value"]
 
