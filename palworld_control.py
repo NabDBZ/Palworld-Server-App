@@ -4680,7 +4680,8 @@ class App(ctk.CTk):
                 w.bind("<Button-3>", lambda e, p=pid: self._paldeck_card(p))
         if start + 28 < len(self._pd_entries):
             self.after(15, lambda: self._pd_chunk(start + 28, gen))
-        elif start == 0:
+        else:
+            # dernier lot -> demarrer le remplissage des images
             self.after(20, self._pd_fill_images)
 
     def _pd_fill_images(self, _start=0):
@@ -7283,7 +7284,8 @@ class App(ctk.CTk):
 
         if start + made < len(entries):
             self.after(15, lambda: self._gw_chunk(start + made, gen))
-        elif start == 0:
+        else:
+            # dernier lot -> demarrer le remplissage des images
             self.after(30, self._gw_fill_images)
 
     def _gw_fill_images(self):
