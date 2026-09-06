@@ -65,7 +65,7 @@ CONSOLE_LOG = os.path.join(BASE, "server_console.log")
 
 # self-update (release builds set SELF_VERSION, e.g. "1.1")
 GITHUB_REPO = "NabDBZ/Palworld-Server-App"
-SELF_VERSION = "1.2"
+SELF_VERSION = "1.3"
 
 
 def latest_app_release():
@@ -2007,6 +2007,15 @@ STR_FR = {
     "Element": "Élément",
     "All elements": "Tous les éléments",
     "Filter Pals by element": "Filtrer les Pals par élément",
+    # --- v18 ---
+    "Breeding tree": "Arbre d'élevage",
+    "Click two Pals in the grid to see their child — right-click for the "
+    "card.":
+        "Clique deux Pals dans la grille pour voir leur enfant — clic droit "
+        "pour la fiche.",
+    "How to get this Pal": "Comment obtenir ce Pal",
+    "parent pair(s) — click one to open its tree":
+        "paire(s) de parents — clique pour ouvrir son arbre",
     # --- v17 ---
     "Paldeck": "Paldeck", "Every Pal, their stats and breeding":
         "Tous les Pals, leurs stats et l'élevage",
@@ -2548,7 +2557,7 @@ class App(ctk.CTk):
         self.side_status = ctk.CTkLabel(side, text="● checking…", font=F_SMALL,
                                         text_color=TEXT_DIM)
         self.side_status.pack(side="bottom", pady=(10, 2))
-        ctk.CTkLabel(side, text="v1.2", font=("Segoe UI", 10),
+        ctk.CTkLabel(side, text="v1.3", font=("Segoe UI", 10),
                      text_color=TEXT_DIM).pack(side="bottom", pady=(0, 8))
 
         # ---- content column ----
@@ -4546,17 +4555,13 @@ class App(ctk.CTk):
                       fg_color=SURFACE_2, hover_color=BORDER,
                       command=self._act_render).pack(side="left",
                                                      padx=(8, 0))
-        self._act_frame = ctk.CTkScrollableFrame(t, fg_color="transparent")
+        self._act_frame = ctk.CTkTextbox(t, font=("Segoe UI", 10),
+                                         wrap="word", state="disabled")
         self._act_frame.pack(fill="both", expand=True)
         self._act_render()
 
     def _act_render(self):
         inner = self._act_frame
-        for w in list(inner.winfo_children()):
-            try:
-                w.destroy()
-            except tk.TclError:
-                pass
         kind = self._act_var.get()
         q = _norm_key(self._act_search.get() if self._act_search else "")
         cats = {"Players": ("👤", "👋"), "Gifts": ("🎁", "🎡"),
@@ -4577,16 +4582,10 @@ class App(ctk.CTk):
             if q and q not in _norm_key(txt):
                 continue
             rows.append(txt)
-        if not rows:
-            ctk.CTkLabel(inner, text="—", font=F_SMALL,
-                         text_color=TEXT_DIM).pack(pady=6)
-            return
-        for txt in rows[:250]:
-            row = ctk.CTkFrame(inner, fg_color=SURFACE, corner_radius=8)
-            row.pack(fill="x", pady=2)
-            ctk.CTkLabel(row, text=txt, font=("Segoe UI", 10), anchor="w",
-                         text_color=TEXT, justify="left",
-                         wraplength=820).pack(fill="x", padx=10, pady=5)
+        inner.configure(state="normal")
+        inner.delete("1.0", "end")
+        inner.insert("end", "\n".join(rows[:400]) or "—")
+        inner.configure(state="disabled")
 
     # ===== Paldeck =====
     def _build_paldeck_tab(self, t):
@@ -4641,6 +4640,8 @@ class App(ctk.CTk):
         entries.sort(key=lambda p: (pm[p].get("deck") or 999,
                                     pm[p].get("fr") or p))
         self._pd_entries = entries
+        self._pd_tiles = {}
+        self._pd_sel = set()
         self._pd_chunk(0, gen)
 
     def _pd_chunk(self, start, gen):
@@ -4660,26 +4661,206 @@ class App(ctk.CTk):
                       padx=3, pady=3)
             tile.grid_propagate(False)
             tile.pack_propagate(False)
-            img = pal_icon2_path(pid)
-            placed = False
-            if img:
-                ci = ctimg(img, (54, 54))
-                if ci is not None:
-                    ctk.CTkLabel(tile, text="", image=ci).pack(pady=(8, 0))
-                    placed = True
-            if not placed:
-                ctk.CTkLabel(tile, text="🐾", font=("Segoe UI Emoji", 22)
-                             ).pack(pady=(10, 0))
+            ph = ctk.CTkLabel(tile, text="🐾", font=("Segoe UI Emoji", 22))
+            ph.pack(pady=(10, 0))
+            ph._pd_placeholder = True
+            self._pd_tiles = getattr(self, "_pd_tiles", {})
+            self._pd_tiles[pid] = tile
             ctk.CTkLabel(tile, text=str(m.get("fr") or pid)[:13],
                          font=("Segoe UI", 9, "bold"),
                          text_color=TEXT).pack(pady=(2, 0))
             els = "/".join(m.get("el") or [])[:16]
             ctk.CTkLabel(tile, text=els, font=("Segoe UI", 8),
                          text_color=TEXT_DIM).pack()
+            sel = pid in getattr(self, "_pd_sel", set())
+            if sel:
+                tile.configure(border_color=ACCENT, border_width=2)
             for w in list(tile.winfo_children()) + [tile]:
-                w.bind("<Button-1>", lambda e, p=pid: self._paldeck_card(p))
+                w.bind("<Button-1>", lambda e, p=pid: self._pd_pick(p))
+                w.bind("<Button-3>", lambda e, p=pid: self._paldeck_card(p))
         if start + 28 < len(self._pd_entries):
             self.after(15, lambda: self._pd_chunk(start + 28, gen))
+        elif start == 0:
+            self.after(20, self._pd_fill_images)
+
+    def _pd_fill_images(self, _start=0):
+        """Remplace les placeholders par les illustrations, 10 par passe."""
+        inner = getattr(self, "_pd_inner", None)
+        if inner is None or not inner.winfo_exists():
+            return
+        pm = load_pal_meta()
+        filled = 0
+        for pid, tile in list(getattr(self, "_pd_tiles", {}).items()):
+            if filled >= 10:
+                self.after(20, self._pd_fill_images)
+                return
+            img = pal_icon2_path(pid)
+            if not img:
+                continue
+            ci = ctimg(img, (54, 54))
+            if ci is None:
+                continue
+            for c in tile.winfo_children():
+                if isinstance(c, ctk.CTkLabel) and \
+                        getattr(c, "_pd_placeholder", False):
+                    try:
+                        c.configure(image=ci, text="")
+                        c._pd_placeholder = False
+                        filled += 1
+                    except tk.TclError:
+                        pass
+                    break
+
+    def _pd_pick(self, pid):
+        """Clic 1 = parent A, clic 2 = parent B -> arbre de combinaison."""
+        self._pd_sel = getattr(self, "_pd_sel", set()) | {pid} \
+            if pid not in getattr(self, "_pd_sel", set()) \
+            else getattr(self, "_pd_sel", set()) - {pid}
+        # re-surligne les tuiles selectionnees
+        for p2, tile in list(getattr(self, "_pd_tiles", {}).items()):
+            try:
+                tile.configure(
+                    border_color=ACCENT if p2 in self._pd_sel else BORDER,
+                    border_width=2 if p2 in self._pd_sel else 1)
+            except tk.TclError:
+                pass
+        if len(self._pd_sel) >= 2:
+            a, b = list(self._pd_sel)[:2]
+            self._pd_sel = set()
+            self._breeding_tree(a, b)
+
+    def _pal_node(self, parent, pid, size=84, big=False):
+        """Noud image+nom d'un Pal (retourne le frame pour etre packe)."""
+        m = _pal_meta_of(pid) or {}
+        node = ctk.CTkFrame(parent, fg_color=SURFACE_2, corner_radius=12,
+                            width=size + 24, height=size + 58)
+        node.pack_propagate(False)
+        img = pal_icon2_path(pid)
+        ci = ctimg(img, (size, size)) if img else None
+        if ci is not None:
+            ctk.CTkLabel(node, text="", image=ci).pack(pady=(10, 0))
+        else:
+            ctk.CTkLabel(node, text="🐾", font=("Segoe UI Emoji", size // 2)
+                         ).pack(pady=(10, 0))
+        ctk.CTkLabel(node, text=str(m.get("fr") or pid)[:14],
+                     font=("Segoe UI", 10 if big else 9, "bold"),
+                     text_color=ACCENT if big else TEXT).pack(pady=(2, 0))
+        ctk.CTkLabel(node, text="/".join(m.get("el") or [])[:14],
+                     font=("Segoe UI", 8),
+                     text_color=TEXT_DIM).pack()
+        return node
+
+    def _breeding_tree(self, a, b):
+        """Arbre visuel A x B -> enfant."""
+        child = breeding_child(a, b)
+        win = ctk.CTkToplevel(self)
+        win.title(T("Breeding tree"))
+        win.geometry("560x420")
+        win.grab_set()
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+        ctk.CTkLabel(body, text="🧬  " + T("Breeding tree"),
+                     font=(F_DISPLAY, 16, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(body, text=T("Click two Pals in the grid to see their "
+                                  "child — right-click for the card."),
+                     font=F_SMALL, text_color=TEXT_DIM, anchor="w",
+                     wraplength=500, justify="left").pack(anchor="w",
+                                                          pady=(0, 10))
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(pady=6)
+        self._pal_node(row, a, 84).pack(side="left", padx=6)
+        ctk.CTkLabel(row, text="×", font=(F_DISPLAY, 26, "bold"),
+                     text_color=TEXT_DIM).pack(side="left", padx=10)
+        self._pal_node(row, b, 84).pack(side="left", padx=6)
+        ctk.CTkLabel(row, text="→", font=(F_DISPLAY, 30, "bold"),
+                     text_color=ACCENT).pack(side="left", padx=14)
+        if child:
+            self._pal_node(row, child, 108, big=True).pack(side="left",
+                                                           padx=6)
+        else:
+            ctk.CTkLabel(row, text="❓\n" + T("Unknown combination "
+                         "(recent Pal?)"), font=F_SMALL, text_color=TEXT_DIM,
+                         justify="left", width=140).pack(side="left",
+                                                         padx=10)
+        if child:
+            ctk.CTkButton(body, text="🎯  " + T("How to get this Pal"),
+                          height=36, corner_radius=10, fg_color=ACCENT,
+                          hover_color=ACCENT_HOVER, text_color="#ffffff",
+                          command=lambda: (win.destroy(),
+                                           self._breeding_parents(child))
+                          ).pack(pady=(16, 0))
+
+    def _breeding_parents(self, target):
+        """Mode inverse: toutes les paires parentales (en images) qui
+        produisent ce Pal."""
+        # index inverse: enfant (ancien id) -> paires
+        pm = load_pal_meta()
+        pdx = load_paldex()
+        name_by_id = {str(int(p.get("id"))): p.get("name") for p in pdx
+                      if p.get("id")}
+        id_by_name = {_norm_key(v): k for k, v in name_by_id.items()}
+        cid_by_name = {}
+        for cid, m in pm.items():
+            if cid.startswith("BOSS_"):
+                continue
+            for nm in (m.get("fr"), m.get("en")):
+                if nm:
+                    cid_by_name.setdefault(_norm_key(nm), cid)
+        m = _pal_meta_of(target) or {}
+        tname = m.get("fr") or m.get("en") or target
+        tkey = id_by_name.get(_norm_key(tname))
+        pairs_out = []
+        def _nm(x):
+            try:
+                return name_by_id.get(str(int(x)))
+            except ValueError:
+                return None  # variante (suffixe A/B…) hors dataset
+
+        if tkey:
+            for a, b in (load_breeding() or {}).get(
+                    "%03d" % int(tkey), []):
+                na, nb = _nm(a), _nm(b)
+                if na and nb:
+                    ca = cid_by_name.get(_norm_key(na))
+                    cb = cid_by_name.get(_norm_key(nb))
+                    if ca and cb:
+                        pairs_out.append((ca, cb))
+        win = ctk.CTkToplevel(self)
+        win.title(T("How to get this Pal"))
+        win.geometry("600x560")
+        win.grab_set()
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+        head = ctk.CTkFrame(body, fg_color="transparent")
+        head.pack(fill="x")
+        self._pal_node(head, target, 72, big=True).pack(side="left")
+        ctk.CTkLabel(head, text="🎯  " + T("How to get this Pal"),
+                     font=(F_DISPLAY, 16, "bold"), text_color=TEXT,
+                     anchor="w").pack(side="left", padx=12)
+        ctk.CTkLabel(body, text=f"{len(pairs_out)} " + T("parent pair(s) — "
+                     "click one to open its tree"),
+                     font=F_SMALL, text_color=TEXT_DIM,
+                     anchor="w").pack(anchor="w", pady=(4, 6))
+        sf = ctk.CTkScrollableFrame(body, fg_color="transparent")
+        sf.pack(fill="both", expand=True)
+        for ca, cb in pairs_out[:40]:
+            r = ctk.CTkFrame(sf, fg_color=SURFACE, corner_radius=10)
+            r.pack(fill="x", pady=3)
+            for w in list(r.winfo_children()):
+                w.destroy()
+            sub = ctk.CTkFrame(r, fg_color="transparent")
+            sub.pack(fill="x")
+            n1 = self._pal_node(sub, ca, 44)
+            n1.pack(side="left", padx=(8, 2), pady=6)
+            ctk.CTkLabel(sub, text="+", font=(F_DISPLAY, 16, "bold"),
+                         text_color=TEXT_DIM).pack(side="left", padx=6)
+            self._pal_node(sub, cb, 44).pack(side="left", padx=2)
+            ctk.CTkLabel(sub, text="→", font=(F_DISPLAY, 18, "bold"),
+                         text_color=ACCENT).pack(side="left", padx=10)
+            for w in list(sub.winfo_children()) + [sub, r]:
+                w.bind("<Button-1>", lambda e, x=ca, y=cb:
+                       (win.destroy(), self._breeding_tree(x, y)))
 
     def _paldeck_card(self, pid):
         pm = _pal_meta_of(pid) or {}
@@ -4719,6 +4900,12 @@ class App(ctk.CTk):
                          text_color=TEXT).pack(side="left")
         btns = ctk.CTkFrame(body, fg_color="transparent")
         btns.pack(fill="x", pady=(16, 0))
+        ctk.CTkButton(btns, text="🎯  " + T("How to get this Pal"),
+                      height=36, corner_radius=10, fg_color=SURFACE_2,
+                      hover_color=BORDER,
+                      command=lambda: (win.destroy(),
+                                       self._breeding_parents(pid))
+                      ).pack(fill="x", pady=(0, 6))
         ctk.CTkButton(btns, text="🧬  " + T("Breed from this Pal"),
                       height=36, corner_radius=10, fg_color=ACCENT,
                       hover_color=ACCENT_HOVER, text_color="#ffffff",
@@ -5198,7 +5385,7 @@ class App(ctk.CTk):
                       corner_radius=8, fg_color=SURFACE_2, hover_color=BORDER,
                       command=self._import_cfg).pack(side="left", padx=(8, 0))
         ctk.CTkLabel(
-            c5, text="Palworld Server Manager v1.2\nManage your own world 🐑\n"
+            c5, text="Palworld Server Manager v1.3\nManage your own world 🐑\n"
                      "Hosted with 🖤",
             font=F_SMALL, text_color=TEXT_DIM, anchor="w", justify="left",
         ).pack(anchor="w", pady=(8, 0))
@@ -6955,7 +7142,7 @@ class App(ctk.CTk):
                     fresh += 1
                 try:
                     alive = win.winfo_exists()
-                except tk.TclError:
+                except (tk.TclError, RuntimeError):
                     return
                 if not alive:
                     return
@@ -7059,18 +7246,19 @@ class App(ctk.CTk):
             tile.grid_propagate(False)
             tile.pack_propagate(False)
             self._gw_buttons[sid] = tile
-            if mode == "pals":
+            # PERF: never build CTkImages inline — 600 tiles x ~50 ms froze
+            # the UI for half a minute. Placeholders first, art filled in
+            # background passes by _gw_fill_images.
+            placed_img = False
+            if False:
                 img_path = (pal_icon2_path(sid)
                             or cached_pal_image(sid, self._gw_paldex))
-            else:
-                img_path = item_icon_path(sid)
-            placed_img = False
-            if img_path:
-                ci = ctimg(img_path, (64, 64))
-                if ci is not None:
-                    ctk.CTkLabel(tile, text="", image=ci).pack(
-                        pady=(8, 0), padx=8)
-                    placed_img = True
+                if img_path:
+                    ci = ctimg(img_path, (64, 64))
+                    if ci is not None:
+                        ctk.CTkLabel(tile, text="", image=ci).pack(
+                            pady=(8, 0), padx=8)
+                        placed_img = True
             if not placed_img:
                 ph = ctk.CTkLabel(tile,
                                   text=item_emoji(sid) if mode == "items"
@@ -7089,30 +7277,42 @@ class App(ctk.CTk):
                            lambda e, s=sid, k=mode: toggle(s, k))
                 except tk.TclError:
                     pass
-            Tooltip(tile, disp + "\n" + sid)
+            # (pas de Tooltip par tuile : 600 fenêtres cachées = 20 s de
+            # construction — le nom est déjà sur la tuile)
             made += 1
 
         if start + made < len(entries):
             self.after(15, lambda: self._gw_chunk(start + made, gen))
+        elif start == 0:
+            self.after(30, self._gw_fill_images)
 
     def _gw_fill_images(self):
         try:
-            self._gw_fill_images_inner()
+            more = self._gw_fill_images_inner()
         except tk.TclError:
-            pass  # wizard closed / widgets torn down mid-pass
+            return  # wizard closed / widgets torn down mid-pass
+        if more:
+            grid = getattr(self, "_gw_grid_inner", None)
+            if grid is not None and grid.winfo_exists():
+                self.after(30, self._gw_fill_images)
 
     def _gw_fill_images_inner(self):
-        """Swap \U0001f43e placeholders for downloaded art IN PLACE — never
-        rebuild the grid (a full re-render per download batch froze the UI
-        for tens of seconds)."""
+        """Swap placeholders for art IN PLACE, max 8 per pass — never build
+        images inline in the chunk pass (that froze the UI). Returns True
+        while placeholders remain."""
         paldex = getattr(self, "_gw_paldex", None)
         if paldex is None:
-            return
+            return False
         grid = getattr(self, "_gw_grid_inner", None)
         if grid is None or not grid.winfo_exists():
-            return
+            return False
+        remaining = False
+        filled = 0
         for sid, tile in list(self._gw_buttons.items()):
             if self._gw_has_img.get(sid):
+                continue
+            if filled >= 8:
+                remaining = True
                 continue
             path = (pal_icon2_path(sid) or cached_pal_image(sid, paldex)
                     if getattr(self, "_gw_mode", "pals") == "pals"
@@ -7129,9 +7329,11 @@ class App(ctk.CTk):
                         c.configure(image=ci, text="")
                         c._gw_placeholder = False
                         self._gw_has_img[sid] = True
+                        filled += 1
                     except tk.TclError:
                         pass
                     break
+        return remaining
 
     def _apply_gift(self, gifts, note=""):
         """Stop → backup → gift.py → verify → start → announce. Threaded."""
