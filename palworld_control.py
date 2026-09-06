@@ -65,7 +65,7 @@ CONSOLE_LOG = os.path.join(BASE, "server_console.log")
 
 # self-update (release builds set SELF_VERSION, e.g. "1.1")
 GITHUB_REPO = "NabDBZ/Palworld-Server-App"
-SELF_VERSION = "1.1"
+SELF_VERSION = "1.2"
 
 
 def latest_app_release():
@@ -892,7 +892,10 @@ def load_paldex(force=False):
         try:
             if time.time() - os.path.getmtime(PALDEX_JSON) < 7 * 86400:
                 with open(PALDEX_JSON, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    cached = json.load(f)
+                if cached and "id" in cached[0]:
+                    return cached
+                # pre-v17 cache: fall through and refetch
         except (OSError, ValueError):
             pass
     try:
@@ -902,6 +905,7 @@ def load_paldex(force=False):
     except (OSError, ValueError):
         return []
     slim = [{"name": p.get("name", ""), "asset": p.get("asset", ""),
+             "id": str(p.get("id") or ""),
              "image": PALDEX_SRC + (p.get("image") or "")}
             for p in raw if p.get("image")]
     try:
@@ -1037,6 +1041,84 @@ def item_icon_path(iid):
     return p if os.path.exists(p) else None
 
 
+BREEDING_JSON = os.path.join(_APPDATA, "breeding.json")
+_BREEDING = None
+
+
+def load_breeding(force=False):
+    """{child_key: [[a, b], ...]} - cached weekly (community paldex)."""
+    global _BREEDING
+    if _BREEDING is not None and not force:
+        return _BREEDING
+    if not force and os.path.exists(BREEDING_JSON):
+        try:
+            if time.time() - os.path.getmtime(BREEDING_JSON) < 7 * 86400:
+                with open(BREEDING_JSON, encoding="utf-8") as f:
+                    _BREEDING = json.load(f)
+                return _BREEDING
+        except (OSError, ValueError):
+            pass
+    fresh = False
+    try:
+        req = urllib.request.Request(
+            PALDEX_SRC + "/src/breeding.json", headers={"User-Agent": "pc"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            _BREEDING = json.loads(r.read().decode())
+            fresh = True
+    except (OSError, ValueError):
+        _BREEDING = {}
+    if fresh:
+        try:
+            with open(BREEDING_JSON, "w", encoding="utf-8") as f:
+                json.dump(_BREEDING, f)
+        except OSError:
+            pass
+    return _BREEDING
+
+
+def _paldex_old_id(pid):
+    """CharacterID -> ancien numero paldex (via noms, table communautaire)."""
+    m = _pal_meta_of(pid) or {}
+    pdx = load_paldex()
+    by_name = {_norm_key(p.get("name")): str(int(p.get("id")))
+               for p in pdx if p.get("id")}
+    for nm in (m.get("fr"), m.get("en")):
+        if nm and _norm_key(nm) in by_name:
+            return by_name[_norm_key(nm)]
+    return None
+
+
+def breeding_child(id_a, id_b):
+    """CharacterID enfant de deux parents (None si inconnu du dataset)."""
+    ka, kb = _paldex_old_id(id_a), _paldex_old_id(id_b)
+    if not ka or not kb:
+        return None
+    pair = sorted(["%03d" % int(ka), "%03d" % int(kb)])
+    pm = load_pal_meta()
+    # nom affiche de l'enfant via id paldex
+    pdx = load_paldex()
+    name_by_id = {str(int(p.get("id"))): p.get("name")
+                  for p in pdx if p.get("id")}
+    for child_key, pairs in (load_breeding() or {}).items():
+        for a, b in pairs:
+            if sorted([str(a), str(b)]) == pair:
+                try:
+                    child_name = name_by_id.get(str(int(child_key)))
+                except ValueError:
+                    child_name = None
+                if not child_name:
+                    return None
+                # -> CharacterID via meta (preferer le non-boss)
+                best = None
+                for cid, m in pm.items():
+                    if child_name in (m.get("fr"), m.get("en")):
+                        if not cid.startswith("BOSS_"):
+                            return cid
+                        best = best or cid
+                return best
+    return None
+
+
 def _pal_meta_of(raw_id):
     pm = load_pal_meta()
     return pm.get(raw_id) or pm.get(re.sub(r"^BOSS_", "", str(raw_id)))
@@ -1132,9 +1214,14 @@ def bootstrap_gift_assets():
                 fr = fr.get("Name") or pid
             if isinstance(en, dict):
                 en = en.get("Name") or fr
+            st = v.get("Stats") or {}
             pal_meta[pid] = {"fr": fr, "en": en, "icon": icon,
                              "deck": v.get("PaldeckIndex") or 0,
-                             "el": v.get("Elements") or []}
+                             "dsuf": str(v.get("PaldeckSuffix") or ""),
+                             "el": v.get("Elements") or [],
+                             "hp": st.get("HP") or 0,
+                             "atk": st.get("ATK") or 0,
+                             "def": st.get("DEF") or 0}
         for name, meta in (("item_meta.json", item_meta),
                            ("pal_meta.json", pal_meta)):
             with open(os.path.join(_APPDATA, name), "w",
@@ -1188,7 +1275,7 @@ def item_emoji(static_id):
 
 
 def steamcmd_update(line_cb):
-    """Stop, update via SteamCMD, backup, restart. line_cb(str) for the log."""
+    """Stop, update via SteamCMD, restart if it was running."""
     line_cb("Stopping server (if running)...")
     was_running = is_running()
     if was_running:
@@ -1206,6 +1293,11 @@ def steamcmd_update(line_cb):
             line_cb(line)
     proc.wait()
     line_cb(f"SteamCMD finished (exit {proc.returncode}).")
+    if was_running:
+        line_cb("Restarting the server...")
+        ok = start_server()
+        line_cb("Server is UP" if ok else
+                "RESTART FAILED — start it from the Server page!")
     line_cb("Backing up saves...")
     backup_now()
     line_cb("Starting server...")
@@ -1915,6 +2007,52 @@ STR_FR = {
     "Element": "Élément",
     "All elements": "Tous les éléments",
     "Filter Pals by element": "Filtrer les Pals par élément",
+    # --- v17 ---
+    "Paldeck": "Paldeck", "Every Pal, their stats and breeding":
+        "Tous les Pals, leurs stats et l'élevage",
+    "Activity": "Activité", "Everything that happened, searchable":
+        "Tout ce qui s'est passé, cherchable",
+    "Search… (name)": "Recherche… (nom)",
+    "Breeding calculator": "Calculateur d'élevage",
+    "Breed from this Pal": "Élever depuis ce Pal",
+    "Pick two parents — the child appears below (community data).":
+        "Choisis deux parents — l'enfant s'affiche en dessous "
+        "(données communautaires).",
+    "Child": "Enfant",
+    "Unknown combination (recent Pal?)":
+        "Combinaison inconnue (Pal récent ?)",
+    "Wheel of fortune": "Roue de la fortune",
+    "Spin the wheel!": "Lance la roue !",
+    "SPIN": "LANCER", "Spin for a random gift for the whole guild!":
+        "Une roue, un cadeau aléatoire pour toute la guilde !",
+    "Deliver to the whole guild? (~1 min restart)":
+        "Offrir à toute la guilde ? (~1 min de redémarrage)",
+    "Nothing… spin again!": "Rien… relance !",
+    "Player card": "Fiche joueur", "Top Pals": "Meilleurs Pals",
+    "Recent activity": "Activité récente",
+    "Time travel": "Voyage dans le temps",
+    "World at that moment": "Le monde à ce moment",
+    "Day": "Jour", "▲/▼ = change since that backup":
+        "▲/▼ = évolution depuis cette sauvegarde",
+    "Reading backup…": "Lecture de la sauvegarde…",
+    "Every day": "Chaque jour",
+    "Rewards": "Récompenses",
+    "Login bonuses and server achievements are queued and delivered "
+    "with the next gift (no extra restart).":
+        "Les bonus de connexion et succès du serveur sont mis en file et "
+        "livrés avec le prochain cadeau (pas de redémarrage en plus).",
+    "Login bonus": "Bonus de connexion",
+    "gold": "or", "Server achievements": "Succès du serveur",
+    "threshold": "palier", "reward (gold)": "récompense (or)",
+    "reward(s) queued — delivered with the next gift":
+        "récompense(s) en file — livrées avec le prochain cadeau",
+    "Login bonuses and server achievements":
+        "Bonus de connexion et succès du serveur",
+    "Login bonus queued for": "Bonus de connexion en file pour",
+    "delivered with the next gift": "livré avec le prochain cadeau",
+    "Send": "Envoyer",
+    "Type an RCON command (Broadcast text, ShowPlayers, Save…).":
+        "Tape une commande RCON (Broadcast texte, ShowPlayers, Save…).",
     "Live players": "Joueurs en direct",
     "Enabled": "Activée",
     "Activity": "Activité",
@@ -2304,7 +2442,9 @@ class App(ctk.CTk):
         ("schedule", "⏰", "Schedule", "When the server runs and restarts"),
         ("maint", "🧰", "Maintenance", "Updates, backups and Windows setup"),
         ("console", "📄", "Console", "Live server output"),
+        ("activity", "📜", "Activity", "Everything that happened, searchable"),
         ("stats", "📊", "Statistics", "Activity, resources and reliability"),
+        ("paldeck", "📖", "Paldeck", "Every Pal, their stats and breeding"),
         ("prefs", "🎨", "Preferences", "Appearance, language and extras"),
     ]
 
@@ -2403,12 +2543,12 @@ class App(ctk.CTk):
         Tooltip(self.btn_quit,
                 T("Close the app completely — it stops watching the server "
                   "(the server itself keeps running)."))
-        ctk.CTkLabel(side, text="Ctrl+1…7 to switch", font=("Segoe UI", 9),
+        ctk.CTkLabel(side, text="Ctrl+1…9 to switch", font=("Segoe UI", 9),
                      text_color=TEXT_DIM).pack(side="bottom", pady=(2, 6))
         self.side_status = ctk.CTkLabel(side, text="● checking…", font=F_SMALL,
                                         text_color=TEXT_DIM)
         self.side_status.pack(side="bottom", pady=(10, 2))
-        ctk.CTkLabel(side, text="v1.1", font=("Segoe UI", 10),
+        ctk.CTkLabel(side, text="v1.2", font=("Segoe UI", 10),
                      text_color=TEXT_DIM).pack(side="bottom", pady=(0, 8))
 
         # ---- content column ----
@@ -2463,6 +2603,8 @@ class App(ctk.CTk):
             "maint": self._build_maint_tab,
             "console": self._build_console_tab,
             "stats": self._build_stats_tab,
+            "paldeck": self._build_paldeck_tab,
+            "activity": self._build_activity_tab,
             "prefs": self._build_prefs_tab,
         }
         self.pages = {}
@@ -3113,6 +3255,12 @@ class App(ctk.CTk):
         rge.pack(fill="x", pady=(0, 6))
         ctk.CTkLabel(rge, text=T("One-click events") + ":", font=F_SMALL,
                      text_color=TEXT_DIM).pack(side="left", padx=(0, 8))
+        wb = ctk.CTkButton(rg, text="\U0001f3b0  " + T("Wheel of fortune"),
+                           height=40, corner_radius=10, fg_color=SURFACE_2,
+                           hover_color=BORDER,
+                           command=self._wheel_of_fortune)
+        wb.pack(side="left", padx=(8, 0))
+        Tooltip(wb, T("Spin for a random gift for the whole guild!"))
         for label, kind, tip in (
                 ("\u2694 " + T("Raid night"), "raid",
                  T("Gift a boss Pal to every guild member and announce it.")),
@@ -3144,7 +3292,8 @@ class App(ctk.CTk):
         for evd in (self.cfg.get("gift_events") or [])[:6]:
             self._add_ge_row(evd.get("time", "20:00"), evd.get("gold", 0),
                              evd.get("items", ""), evd.get("pal", ""),
-                             evd.get("enabled", True))
+                             evd.get("enabled", True),
+                             evd.get("days", "1234567"))
 
         # ----- base map -----
         mapc = self._card(scroll, "Base map",
@@ -3152,6 +3301,14 @@ class App(ctk.CTk):
         self.canvas_map = tk.Canvas(mapc, height=240, bg=self._hex(SURFACE),
                                     highlightthickness=0)
         self.canvas_map.pack(fill="x")
+        clock_row = ctk.CTkFrame(mapc, fg_color="transparent")
+        clock_row.pack(anchor="w", pady=(4, 0))
+        self._game_clock_lbl = ctk.CTkLabel(clock_row, text="⏳ —",
+                                            font=(F_DISPLAY, 13, "bold"),
+                                            text_color=ACCENT)
+        self._game_clock_lbl.pack(side="left")
+        self._game_state = {"ts": 0, "min": 0, "day": 0, "rate": 24.0}
+        self.after(1000, self._game_clock_tick)
         sw_live = ctk.CTkSwitch(
             mapc, text=T("Live players"), height=24,
             command=self._toggle_live_map,
@@ -3247,6 +3404,24 @@ class App(ctk.CTk):
         self.txt_console = ctk.CTkTextbox(card, font=("Consolas", 10),
                                           fg_color=SURFACE_2, corner_radius=10)
         self.txt_console.pack(fill="both", expand=True)
+        # --- console interactive (RCON direct) ---
+        self._rcon_hist = [""]
+        self._rcon_hi = 0
+        cmdrow = ctk.CTkFrame(t, fg_color="transparent")
+        cmdrow.pack(fill="x", pady=(6, 0))
+        self._rcon_entry = ctk.CTkEntry(cmdrow, height=34,
+                                        placeholder_text="RCON: Broadcast …")
+        self._rcon_entry.pack(side="left", fill="x", expand=True)
+        self._rcon_entry.bind("<Return>", lambda e: self._rcon_send())
+        self._rcon_entry.bind("<Up>", self._rcon_up)
+        self._rcon_entry.bind("<Down>", self._rcon_down)
+        ctk.CTkButton(cmdrow, text="▶  " + T("Send"), width=90, height=34,
+                      corner_radius=10, fg_color=ACCENT,
+                      hover_color=ACCENT_HOVER, text_color="#ffffff",
+                      command=self._rcon_send).pack(side="left",
+                                                    padx=(8, 0))
+        Tooltip(self._rcon_entry, T("Type an RCON command (Broadcast text, "
+                                    "ShowPlayers, Save…)."))
         self.txt_console.tag_config("err", foreground=self._hex(("#b91c1c", "#f87171")))
         self.txt_console.tag_config("warn", foreground=self._hex(("#b45309", "#fbbf24")))
 
@@ -3525,7 +3700,8 @@ class App(ctk.CTk):
         if errors:
             names = ", ".join(tr_setting(f[1], f[2], f[3])[0]
                               for f in PLAYFIELDS if f[1] in errors)
-            messagebox.showerror(T("Invalid values"), "Please check:\n" + names)
+            messagebox.showerror(T("Invalid values"),
+                                 "Please check:\n" + names)
             return
         try:
             current = load_server_settings()
@@ -3942,6 +4118,8 @@ class App(ctk.CTk):
             )
             b.pack(fill="x", pady=2)
             menu = tk.Menu(self, tearoff=0)
+            menu.add_command(label="⏳  " + T("Time travel"),
+                  command=lambda n=name: self._explore_backup(n))
             menu.add_command(label=T("Restore"), command=lambda n=name:
                              self._restore_named(n))
             menu.add_command(label=T("Verify"), command=lambda n=name:
@@ -4321,6 +4499,299 @@ class App(ctk.CTk):
                 f"{best % 60:02d}m")
         except Exception:
             pass
+
+    # ===== Activity center =====
+    def _rcon_send(self):
+        cmd = (self._rcon_entry.get() or "").strip()
+        if not cmd:
+            return
+        self._rcon_hist.insert(-1, cmd)
+        self._rcon_hi = len(self._rcon_hist) - 1
+        self._rcon_entry.delete(0, "end")
+        self._append_console("» " + cmd, tag="cmd")
+
+        def work():
+            try:
+                out = rcon_exec(cmd, timeout=8) or "(no output)"
+            except Exception as e:  # noqa: BLE001
+                out = f"error: {e}"
+            self.after(0, lambda: self._append_console("« " + out))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _rcon_up(self, _e=None):
+        if self._rcon_hi > 0:
+            self._rcon_hi -= 1
+            self._rcon_entry.delete(0, "end")
+            self._rcon_entry.insert(0, self._rcon_hist[self._rcon_hi])
+
+    def _rcon_down(self, _e=None):
+        if self._rcon_hi < len(self._rcon_hist) - 1:
+            self._rcon_hi += 1
+            self._rcon_entry.delete(0, "end")
+            self._rcon_entry.insert(0, self._rcon_hist[self._rcon_hi])
+
+    def _build_activity_tab(self, t):
+        top = ctk.CTkFrame(t, fg_color="transparent")
+        top.pack(fill="x", pady=(0, 6))
+        self._act_var = tk.StringVar(value="All")
+        seg = ctk.CTkSegmentedButton(
+            top, values=["All", "Players", "Gifts", "System"],
+            variable=self._act_var, command=lambda _v: self._act_render())
+        seg.pack(side="left")
+        self._act_search = ctk.CTkEntry(top, width=220,
+                                        placeholder_text=T("Search…"))
+        self._act_search.pack(side="left", padx=(10, 0))
+        self._act_search.bind("<KeyRelease>", lambda e: self._act_render())
+        ctk.CTkButton(top, text="🔄", width=36, height=32, corner_radius=8,
+                      fg_color=SURFACE_2, hover_color=BORDER,
+                      command=self._act_render).pack(side="left",
+                                                     padx=(8, 0))
+        self._act_frame = ctk.CTkScrollableFrame(t, fg_color="transparent")
+        self._act_frame.pack(fill="both", expand=True)
+        self._act_render()
+
+    def _act_render(self):
+        inner = self._act_frame
+        for w in list(inner.winfo_children()):
+            try:
+                w.destroy()
+            except tk.TclError:
+                pass
+        kind = self._act_var.get()
+        q = _norm_key(self._act_search.get() if self._act_search else "")
+        cats = {"Players": ("👤", "👋"), "Gifts": ("🎁", "🎡"),
+                "System": ("💥", "🔧", "⬆", "🗄", "⬇", "🧟", "🔑", "💾")}
+        try:
+            with open(EVENTS_JSON, encoding="utf-8") as f:
+                evs = json.load(f)
+        except (OSError, ValueError):
+            evs = []
+        rows = []
+        for e in reversed(evs[-400:]):
+            txt = str(e)
+            if kind != "All":
+                icons = cats.get(kind, ())
+                if not any(txt.startswith(i) or i + " " in txt[:4]
+                           for i in icons):
+                    continue
+            if q and q not in _norm_key(txt):
+                continue
+            rows.append(txt)
+        if not rows:
+            ctk.CTkLabel(inner, text="—", font=F_SMALL,
+                         text_color=TEXT_DIM).pack(pady=6)
+            return
+        for txt in rows[:250]:
+            row = ctk.CTkFrame(inner, fg_color=SURFACE, corner_radius=8)
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=txt, font=("Segoe UI", 10), anchor="w",
+                         text_color=TEXT, justify="left",
+                         wraplength=820).pack(fill="x", padx=10, pady=5)
+
+    # ===== Paldeck =====
+    def _build_paldeck_tab(self, t):
+        wrap = ctk.CTkFrame(t, fg_color="transparent")
+        wrap.pack(fill="both", expand=True)
+
+        top = ctk.CTkFrame(wrap, fg_color="transparent")
+        top.pack(fill="x", pady=(0, 6))
+        self._pd_search = ctk.CTkEntry(top, height=34, corner_radius=10,
+                                       fg_color=SURFACE, border_width=1,
+                                       border_color=BORDER,
+                                       placeholder_text=T("Search… (name)"))
+        self._pd_search.pack(side="left", fill="x", expand=True)
+        self._pd_el_var = tk.StringVar(value=T("All elements"))
+        _els = sorted({e for m in load_pal_meta().values()
+                       for e in (m.get("el") or [])})
+        ctk.CTkOptionMenu(top, width=150, values=[T("All elements")] + _els,
+                          variable=self._pd_el_var, fg_color=SURFACE,
+                          command=lambda _v: self._pd_render()).pack(
+            side="left", padx=(8, 0))
+        ctk.CTkButton(top, text="🧬  " + T("Breeding calculator"), height=34,
+                      corner_radius=10, fg_color=ACCENT,
+                      hover_color=ACCENT_HOVER, text_color="#ffffff",
+                      command=self._breeding_dialog).pack(side="left",
+                                                          padx=(8, 0))
+        self._pd_grid = ctk.CTkScrollableFrame(wrap, fg_color="transparent")
+        self._pd_grid.pack(fill="both", expand=True)
+        self._pd_inner = ctk.CTkFrame(self._pd_grid, fg_color="transparent")
+        self._pd_inner.pack(fill="both", expand=True)
+        self._pd_gen = 0
+        self._pd_render()
+
+    def _pd_render(self):
+        for w in list(self._pd_inner.winfo_children()):
+            try:
+                w.destroy()
+            except tk.TclError:
+                pass
+        self._pd_gen += 1
+        gen = self._pd_gen
+        pm = load_pal_meta()
+        q = _norm_key(self._pd_search.get() if self._pd_search else "")
+        sel_el = self._pd_el_var.get()
+        entries = [p for p in pm if not p.startswith(("RAID_", "GYM_"))
+                   and not p.startswith("BOSS_")]
+        if q:
+            entries = [p for p in entries
+                       if q in _norm_key(p + " " + str(pm[p].get("fr") or "")
+                                         + " " + str(pm[p].get("en") or ""))]
+        if sel_el and sel_el != T("All elements"):
+            entries = [p for p in entries if sel_el in (pm[p].get("el") or [])]
+        entries.sort(key=lambda p: (pm[p].get("deck") or 999,
+                                    pm[p].get("fr") or p))
+        self._pd_entries = entries
+        self._pd_chunk(0, gen)
+
+    def _pd_chunk(self, start, gen):
+        if gen != self._pd_gen:
+            return
+        inner = getattr(self, "_pd_inner", None)
+        if inner is None or not inner.winfo_exists():
+            return
+        pm = load_pal_meta()
+        cols = 7
+        for i, pid in enumerate(self._pd_entries[start:start + 28]):
+            m = pm[pid]
+            tile = ctk.CTkFrame(inner, width=92, height=112, corner_radius=10,
+                                fg_color=SURFACE, border_width=1,
+                                border_color=BORDER, cursor="hand2")
+            tile.grid(row=start // cols + i // cols, column=i % cols,
+                      padx=3, pady=3)
+            tile.grid_propagate(False)
+            tile.pack_propagate(False)
+            img = pal_icon2_path(pid)
+            placed = False
+            if img:
+                ci = ctimg(img, (54, 54))
+                if ci is not None:
+                    ctk.CTkLabel(tile, text="", image=ci).pack(pady=(8, 0))
+                    placed = True
+            if not placed:
+                ctk.CTkLabel(tile, text="🐾", font=("Segoe UI Emoji", 22)
+                             ).pack(pady=(10, 0))
+            ctk.CTkLabel(tile, text=str(m.get("fr") or pid)[:13],
+                         font=("Segoe UI", 9, "bold"),
+                         text_color=TEXT).pack(pady=(2, 0))
+            els = "/".join(m.get("el") or [])[:16]
+            ctk.CTkLabel(tile, text=els, font=("Segoe UI", 8),
+                         text_color=TEXT_DIM).pack()
+            for w in list(tile.winfo_children()) + [tile]:
+                w.bind("<Button-1>", lambda e, p=pid: self._paldeck_card(p))
+        if start + 28 < len(self._pd_entries):
+            self.after(15, lambda: self._pd_chunk(start + 28, gen))
+
+    def _paldeck_card(self, pid):
+        pm = _pal_meta_of(pid) or {}
+        win = ctk.CTkToplevel(self)
+        win.title(str(pm.get("fr") or pid))
+        win.geometry("430x430")
+        win.grab_set()
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+        head = ctk.CTkFrame(body, fg_color="transparent")
+        head.pack(fill="x")
+        img = pal_icon2_path(pid)
+        if img:
+            ci = ctimg(img, (110, 110))
+            if ci is not None:
+                ctk.CTkLabel(head, text="", image=ci).pack(side="left",
+                                                           padx=(0, 14))
+        ctk.CTkLabel(head, text="⭐ " if pid.startswith("BOSS_") else ""
+                     + str(pm.get("fr") or pid), font=(F_DISPLAY, 20, "bold"),
+                     text_color=TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(head, text=f"No. {pm.get('deck') or '—'} · "
+                     + " / ".join(pm.get("el") or ["?"]),
+                     font=F_SMALL, text_color=TEXT_DIM, anchor="w"
+                     ).pack(anchor="w", pady=(2, 0))
+        # barres de stats
+        for label, key, mx in (("HP", "hp", 130), ("ATK", "atk", 145),
+                               ("DEF", "def", 130)):
+            v = int(pm.get(key) or 0)
+            row = ctk.CTkFrame(body, fg_color="transparent")
+            row.pack(fill="x", pady=(8, 0))
+            ctk.CTkLabel(row, text=label, width=36, font=F_SMALL,
+                         text_color=TEXT_DIM, anchor="w").pack(side="left")
+            bar = ctk.CTkProgressBar(row, width=240)
+            bar.set(min(1.0, v / mx))
+            bar.pack(side="left", padx=8)
+            ctk.CTkLabel(row, text=str(v), width=40, font=(F_BODY_B, 11),
+                         text_color=TEXT).pack(side="left")
+        btns = ctk.CTkFrame(body, fg_color="transparent")
+        btns.pack(fill="x", pady=(16, 0))
+        ctk.CTkButton(btns, text="🧬  " + T("Breed from this Pal"),
+                      height=36, corner_radius=10, fg_color=ACCENT,
+                      hover_color=ACCENT_HOVER, text_color="#ffffff",
+                      command=lambda: (win.destroy(),
+                                       self._breeding_dialog(pid))
+                      ).pack(fill="x")
+
+    def _breeding_dialog(self, preset=None):
+        pm = load_pal_meta()
+        ids = [p for p in pm if not p.startswith(("BOSS_", "RAID_", "GYM_"))]
+        ids.sort(key=lambda p: (pm[p].get("deck") or 999, pm[p].get("fr") or p))
+        names = [str(pm[p].get("fr") or p) for p in ids]
+        win = ctk.CTkToplevel(self)
+        win.title(T("Breeding calculator"))
+        win.geometry("460x330")
+        win.grab_set()
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+        ctk.CTkLabel(body, text="🧬  " + T("Breeding calculator"),
+                     font=(F_DISPLAY, 16, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(body, text=T("Pick two parents — the child appears "
+                                  "below (community data)."),
+                     font=F_SMALL, text_color=TEXT_DIM,
+                     wraplength=420, justify="left", anchor="w"
+                     ).pack(anchor="w", pady=(0, 8))
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(fill="x")
+        om_a = ctk.CTkComboBox(row, values=names, width=180)
+        om_b = ctk.CTkComboBox(row, values=names, width=180)
+        om_a.pack(side="left", padx=(0, 8))
+        om_b.pack(side="left")
+        if preset:
+            nm = str((_pal_meta_of(preset) or {}).get("fr") or preset)
+            if nm in names:
+                om_a.set(nm)
+        om_b.set(names[1] if len(names) > 1 else names[0])
+        self._br_result = ctk.CTkFrame(body, fg_color=SURFACE_2,
+                                       corner_radius=12)
+        self._br_result.pack(fill="x", pady=(14, 0))
+
+        def calc(_v=None):
+            for w in list(self._br_result.winfo_children()):
+                w.destroy()
+            na, nb = om_a.get(), om_b.get()
+            ia = next((p for p in ids
+                       if str(pm[p].get("fr") or p) == na), None)
+            ib = next((p for p in ids
+                       if str(pm[p].get("fr") or p) == nb), None)
+            child = breeding_child(ia, ib) if ia and ib else None
+            if child:
+                img = pal_icon2_path(child)
+                ci = ctimg(img, (64, 64)) if img else None
+                if ci is not None:
+                    ctk.CTkLabel(self._br_result, text="",
+                                 image=ci).pack(side="left", padx=12,
+                                                pady=10)
+                txt = ctk.CTkFrame(self._br_result, fg_color="transparent")
+                txt.pack(side="left", fill="x", expand=True)
+                ctk.CTkLabel(txt, text=T("Child") + " :", font=F_SMALL,
+                             text_color=TEXT_DIM, anchor="w").pack(anchor="w")
+                ctk.CTkLabel(txt, text=pal_disp(child),
+                             font=(F_DISPLAY, 16, "bold"), text_color=ACCENT,
+                             anchor="w").pack(anchor="w")
+            else:
+                ctk.CTkLabel(self._br_result, text="❓  " + T("Unknown "
+                             "combination (recent Pal?)"),
+                             font=F_SMALL, text_color=TEXT_DIM).pack(
+                    padx=12, pady=16)
+
+        om_a.configure(command=calc)
+        om_b.configure(command=calc)
+        calc()
 
     def _build_prefs_tab(self, t):
         scroll = ctk.CTkScrollableFrame(t, fg_color="transparent")
@@ -4727,7 +5198,7 @@ class App(ctk.CTk):
                       corner_radius=8, fg_color=SURFACE_2, hover_color=BORDER,
                       command=self._import_cfg).pack(side="left", padx=(8, 0))
         ctk.CTkLabel(
-            c5, text="Palworld Server Manager v1.1\nManage your own world 🐑\n"
+            c5, text="Palworld Server Manager v1.2\nManage your own world 🐑\n"
                      "Hosted with 🖤",
             font=F_SMALL, text_color=TEXT_DIM, anchor="w", justify="left",
         ).pack(anchor="w", pady=(8, 0))
@@ -5526,7 +5997,43 @@ class App(ctk.CTk):
                          + (f" · {T('Day')} {gt.get('day', '?')}" if gt else ""))
         return "\n".join(lines)
 
+    def _discord_file(self, path, text=""):
+        """Envoie un fichier (PNG) sur le webhook Discord (multipart)."""
+        hook = self.cfg.get("discord_webhook")
+        if not hook or not os.path.exists(path):
+            return
+        try:
+            import uuid as _uuid
+            bnd = "----" + _uuid.uuid4().hex
+            with open(path, "rb") as f:
+                png = f.read()
+            head = (f"--{bnd}\r\nContent-Disposition: form-data; "
+                    f"name=\"payload_json\"\r\n"
+                    f"Content-Type: application/json\r\n\r\n"
+                    ).encode() + json.dumps(
+                        {"content": text or ""}).encode() + b"\r\n"
+            fpart = (f"--{bnd}\r\nContent-Disposition: form-data; "
+                     f"name=\"files[0]\"; "
+                     f"filename=\"{os.path.basename(path)}\"\r\n"
+                     f"Content-Type: image/png\r\n\r\n"
+                     ).encode() + png + b"\r\n" + \
+                f"--{bnd}--\r\n".encode()
+            req = urllib.request.Request(
+                hook, data=head + fpart,
+                headers={"Content-Type":
+                         f"multipart/form-data; boundary={bnd}"})
+            urllib.request.urlopen(req, timeout=15).read()
+        except (OSError, ValueError) as e:
+            self._log_event(f"⚠ Discord file upload failed: {e}")
+
     def _weekly_recap(self):
+        try:
+            self._export_guild_card(weekly=True)
+            self.after(1500, lambda: self._discord_file(
+                os.path.join(BASE, "guild_card.png"),
+                "📊 " + T("Weekly recap") + " — guild card"))
+        except Exception:
+            pass
         msg = self._weekly_recap_text()
         hook = self.cfg.get("discord_webhook")
         if hook and discord_send(hook, msg):
@@ -5577,7 +6084,7 @@ class App(ctk.CTk):
                 out.append((p.get("name") or uid[:8], uid))
         return out or []
 
-    def _add_ge_row(self, tval, gold, items, pal, enabled):
+    def _add_ge_row(self, tval, gold, items, pal, enabled, days="1234567"):
         if not hasattr(self, "ge_frame"):
             return
         row = ctk.CTkFrame(self.ge_frame, fg_color="transparent")
@@ -5601,15 +6108,24 @@ class App(ctk.CTk):
         del_btn = ctk.CTkButton(row, text="✖", width=34, height=28,
                                 corner_radius=8, fg_color=SURFACE_2,
                                 hover_color=RED_HOVER, text_color=TEXT_DIM,
-                                command=lambda: (self._ge_rows.remove(
-                                    [ent_t, ent_g, ent_i, ent_p, var_en, row]),
+                                command=lambda: (setattr(
+                                    self, "_ge_rows",
+                                    [r for r in self._ge_rows
+                                     if r[5] is not row]),
                                                  row.destroy()))
         del_btn.pack(side="left")
-        self._ge_rows.append([ent_t, ent_g, ent_i, ent_p, var_en, row])
+        om_days = ctk.CTkOptionMenu(
+            row, width=110, height=26,
+            values=[T("Every day")] + WEEKDAYS[1:], fg_color=SURFACE_2)
+        om_days.set(WEEKDAYS[int(days)] if days.isdigit()
+                    and 1 <= int(days) <= 7 else T("Every day"))
+        om_days.pack(side="left", padx=(6, 0))
+        self._ge_rows.append([ent_t, ent_g, ent_i, ent_p, var_en, row,
+                              om_days])
 
     def _save_ge(self):
         events = []
-        for ent_t, ent_g, ent_i, ent_p, var_en, _row in self._ge_rows:
+        for ent_t, ent_g, ent_i, ent_p, var_en, _row, om_days in self._ge_rows:
             t = ent_t.get().strip()
             g = ent_g.get().strip()
             if not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", t or ""):
@@ -5622,7 +6138,9 @@ class App(ctk.CTk):
                 messagebox.showerror(T("Invalid values"),
                                      T("Gold must be a number."))
                 return
-            events.append({"time": t, "gold": gold,
+            dsel = om_days.get()
+            days = str(WEEKDAYS.index(dsel)) if dsel in WEEKDAYS                 else "1234567"
+            events.append({"time": t, "gold": gold, "days": days,
                            "items": ent_i.get().strip(),
                            "pal": ent_p.get().strip(),
                            "enabled": bool(var_en.get())})
@@ -5758,6 +6276,384 @@ class App(ctk.CTk):
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       text_color="#ffffff", command=run).pack(fill="x",
                                                               pady=(14, 0))
+
+    def _rewards_dialog(self):
+        win = ctk.CTkToplevel(self)
+        win.title(T("Rewards"))
+        win.geometry("560x520")
+        win.grab_set()
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=14, pady=10)
+        ctk.CTkLabel(body, text="🎁  " + T("Rewards"), font=(F_DISPLAY, 16,
+                                                            "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(body, text=T("Login bonuses and server achievements "
+                                  "are queued and delivered with the next "
+                                  "gift (no extra restart)."),
+                     font=F_SMALL, text_color=TEXT_DIM, wraplength=510,
+                     justify="left", anchor="w").pack(anchor="w", pady=(0,
+                                                                       8))
+        lb = self.cfg.get("login_bonus") or {}
+        ctk.CTkLabel(body, text=T("Login bonus"), font=(F_DISPLAY, 13,
+                                                        "bold"),
+                     text_color=TEXT, anchor="w").pack(anchor="w")
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(fill="x", pady=2)
+        var_lb = tk.BooleanVar(value=bool(lb.get("enabled")))
+        ctk.CTkSwitch(row, text=T("Enabled"), variable=var_lb,
+                      height=24).pack(side="left", padx=(0, 10))
+        ent_lg = ctk.CTkEntry(row, width=110)
+        ent_lg.insert(0, str(lb.get("gold") or 5000))
+        ent_lg.pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(row, text=T("gold"), font=F_SMALL,
+                     text_color=TEXT_DIM).pack(side="left", padx=(0, 10))
+        ent_li = ctk.CTkEntry(row, width=180)
+        ent_li.insert(0, str(lb.get("items") or "PalSphere x10"))
+        ent_li.pack(side="left")
+        ctk.CTkLabel(body, text=T("Server achievements") + "  (gold / pals "
+                     "/ level)", font=(F_DISPLAY, 13, "bold"), text_color=TEXT,
+                     anchor="w").pack(anchor="w", pady=(10, 2))
+        listf = ctk.CTkScrollableFrame(body, height=190, fg_color="transparent")
+        listf.pack(fill="x")
+
+        def render_rows():
+            for w in listf.winfo_children():
+                w.destroy()
+            for a in (self.cfg.get("achievements") or []):
+                r2 = ctk.CTkFrame(listf, fg_color=SURFACE, corner_radius=8)
+                r2.pack(fill="x", pady=2)
+                ctk.CTkLabel(r2, text=f"🏅 {a.get('metric')} ≥ "
+                             f"{a.get('threshold')}  →  \U0001fa99 "
+                             f"{a.get('reward')}", font=F_BODY,
+                             text_color=TEXT).pack(side="left", padx=10,
+                                                   pady=6)
+                ctk.CTkButton(r2, text="✖", width=30, height=26,
+                              fg_color=SURFACE_2, hover_color=RED_HOVER,
+                              command=lambda aa=a: (
+                                  self.cfg.__setitem__(
+                                      "achievements",
+                                      [x for x in self.cfg.get(
+                                          "achievements") or []
+                                       if x != aa]),
+                                  save_cfg(self.cfg), render_rows())
+                              ).pack(side="right", padx=6)
+
+        render_rows()
+        addrow = ctk.CTkFrame(body, fg_color="transparent")
+        addrow.pack(fill="x", pady=2)
+        om_m = ctk.CTkOptionMenu(addrow, width=100, values=["gold", "pals",
+                                                            "level"])
+        om_m.pack(side="left", padx=(0, 6))
+        ent_t = ctk.CTkEntry(addrow, width=90,
+                             placeholder_text=T("threshold"))
+        ent_t.pack(side="left", padx=(0, 6))
+        ent_r = ctk.CTkEntry(addrow, width=110,
+                             placeholder_text=T("reward (gold)"))
+        ent_r.pack(side="left", padx=(0, 6))
+
+        def add_ach():
+            try:
+                thr = int(ent_t.get())
+                rew = int(ent_r.get() or 0)
+            except ValueError:
+                return
+            if thr <= 0:
+                return
+            self.cfg.setdefault("achievements", []).append(
+                {"metric": om_m.get(), "threshold": thr, "reward": rew})
+            save_cfg(self.cfg)
+            ent_t.delete(0, "end")
+            ent_r.delete(0, "end")
+            render_rows()
+
+        ctk.CTkButton(addrow, text="➕", width=36, height=28,
+                      fg_color=SURFACE_2, hover_color=BORDER,
+                      command=add_ach).pack(side="left")
+
+        def save_all():
+            self.cfg["login_bonus"] = {
+                "enabled": bool(var_lb.get()),
+                "gold": int(ent_lg.get() or 0),
+                "items": ent_li.get().strip()}
+            save_cfg(self.cfg)
+            self._toast(T("Saved"), "🎁")
+            win.destroy()
+
+        ctk.CTkButton(body, text="💾  " + T("Save"), height=38,
+                      corner_radius=10, fg_color=ACCENT,
+                      hover_color=ACCENT_HOVER, text_color="#ffffff",
+                      command=save_all).pack(fill="x", pady=(12, 0))
+        nb = len(self.cfg.get("reward_queue") or [])
+        if nb:
+            ctk.CTkLabel(body, text=f"⏳ {nb} " + T("reward(s) queued — "
+                         "delivered with the next gift"),
+                         font=F_SMALL, text_color=ACCENT).pack(anchor="w",
+                                                               pady=(6, 0))
+
+    def _wheel_of_fortune(self):
+        """Roue animee -> lot aleatoire pondere, offert a toute la guilde."""
+        members = self._guild_members()
+        if not members:
+            self._toast(T("No guild members yet — scan the world first."),
+                        "⚠")
+            return
+        import random
+        lots = [("gold", 20000, 40), ("gold", 100000, 6),
+                ("items", "PalSphere x30", 18), ("items", "Cake x10", 14),
+                ("pal", None, 12), ("pal_rare", None, 7), ("gold", 0, 3)]
+        weights = [w for _k, _v, w in lots]
+        win = random.choices(lots, weights=weights)[0]
+
+        win2 = ctk.CTkToplevel(self)
+        win2.title(T("Wheel of fortune"))
+        win2.geometry("420x420")
+        win2.grab_set()
+        cv = tk.Canvas(win2, width=380, height=300, bg=self._hex(SURFACE),
+                       highlightthickness=0)
+        cv.pack(pady=10)
+        n = len(lots)
+        colors = [self._hex(ACCENT if i % 2 == 0 else ACCENT_SOFT)
+                  for i in range(n)]
+        import math
+        state = {"a": 0.0}
+
+        def draw():
+            cv.delete("all")
+            cx, cy, r = 190, 150, 120
+            for i in range(n):
+                a0 = state["a"] + i * 2 * math.pi / n
+                a1 = a0 + 2 * math.pi / n
+                cv.create_pieslice(cx - r, cy - r, cx + r, cy + r,
+                                   math.degrees(a0), math.degrees(a1),
+                                   fill=colors[i], outline="white")
+            cv.create_polygon(190, 18, 180, 42, 200, 42, fill="#f59e0b")
+
+        draw()
+        lbl = ctk.CTkLabel(win2, text=T("Spin the wheel!"), font=(F_DISPLAY,
+                                                                 15, "bold"))
+        lbl.pack(pady=4)
+        target = state["a"] + 2 * 2 * math.pi + \
+            random.uniform(0, 2 * math.pi)
+
+        def anim():
+            state["a"] += (target - state["a"]) * 0.06 + 0.02
+            draw()
+            if abs(target - state["a"]) > 0.03:
+                win2.after(16, anim)
+            else:
+                seg = int(((3 * math.pi / 2 - state["a"]) % (2 * math.pi))
+                          / (2 * math.pi) * n)
+                kind, val = lots[seg][0], lots[seg][1]
+                if kind == "gold" and val:
+                    desc = f"\U0001fa99 {val:,}"
+                    gifts = [{"uid": u, "gold": val, "items": [], "pals": []}
+                             for _n, u in members]
+                elif kind == "items":
+                    items = self._parse_items_text(val)
+                    desc = ", ".join(f"{item_disp(i)} \u00d7{c}"
+                                     for i, c in items)
+                    gifts = [{"uid": u, "gold": 0, "items": items,
+                              "pals": []} for _n, u in members]
+                elif kind == "pal":
+                    import random as _r
+                    pid = _r.choice([p for p in load_pal_meta()
+                                     if not p.startswith(("BOSS_", "RAID_",
+                                                          "GYM_"))])
+                    desc = f"{pal_disp(pid)} Lv30"
+                    gifts = [{"uid": u, "gold": 0, "items": [],
+                              "pals": [{"id": pid, "lv": 30, "n": 1}]}
+                             for _n, u in members]
+                elif kind == "pal_rare":
+                    import random as _r
+                    pm = load_pal_meta()
+                    rare = [p for p, m in pm.items()
+                            if not p.startswith(("BOSS_", "RAID_", "GYM_"))
+                            and (m.get("atk") or 0) >= 125]
+                    pid = _r.choice(rare or list(pm)[:20])
+                    desc = f"⭐ {pal_disp(pid)} Lv40"
+                    gifts = [{"uid": u, "gold": 0, "items": [],
+                              "pals": [{"id": pid, "lv": 40, "n": 1}]}
+                             for _n, u in members]
+                else:
+                    desc = T("Nothing… spin again!")
+                    gifts = []
+                lbl.configure(text="🎡  " + desc)
+                if gifts and messagebox.askyesno(
+                        T("Wheel of fortune"),
+                        desc + "\n\n" + T("Deliver to the whole guild? "
+                                           "(~1 min restart)"), parent=win2):
+                    win2.destroy()
+                    self._apply_gift(gifts, "🎡 " + desc)
+
+        btn = ctk.CTkButton(win2, text="🎡  " + T("SPIN"), height=44,
+                            corner_radius=12, font=("Segoe UI", 14, "bold"),
+                            fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                            text_color="#ffffff",
+                            command=lambda: (btn.configure(state="disabled"),
+                                             anim()))
+        btn.pack(pady=8)
+
+    def _player_card(self, name, uid):
+        """Grande fiche d'un joueur."""
+        data = self._last_guild_data or {}
+        p = next((x for x in data.get("all_players") or []
+                  if str(x.get("uid", "")).lower().startswith(uid[:12].lower()
+                                                              )), {})
+        inv = next((x for x in data.get("inventory") or []
+                    if str(x.get("uid", "")).lower().startswith(
+                        uid[:12].lower())), {})
+        win = ctk.CTkToplevel(self)
+        win.title(name)
+        win.geometry("560x560")
+        win.grab_set()
+        body = ctk.CTkFrame(win, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+        head = ctk.CTkFrame(body, fg_color="transparent")
+        head.pack(fill="x")
+        av = self._avatar(head, name, self._sid_for(name))
+        av.configure(width=64, height=64)
+        av.pack(side="left", padx=(0, 12))
+        ctk.CTkLabel(head, text=self._disp_name(name),
+                     font=(F_DISPLAY, 18, "bold"), text_color=TEXT,
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(head, text=f"Lv {p.get('level', '?')} · "
+                     f"{p.get('pals', '?')} Pals · "
+                     f"\U0001fa99 {(inv.get('gold') or 0):,}",
+                     font=F_SMALL, text_color=TEXT_DIM,
+                     anchor="w").pack(anchor="w")
+        played = self._playtime_for(name) if hasattr(
+            self, "_playtime_for") else ""
+        if played:
+            ctk.CTkLabel(head, text="⏱ " + played, font=F_SMALL,
+                         text_color=TEXT_DIM, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(body, text=T("Top Pals"), font=(F_DISPLAY, 13, "bold"),
+                     text_color=TEXT, anchor="w").pack(anchor="w",
+                                                       pady=(12, 4))
+        grid = ctk.CTkFrame(body, fg_color="transparent")
+        grid.pack(fill="x")
+        for i, (pid, cnt) in enumerate((p.get("top_pals") or [])[:10]):
+            tile = ctk.CTkFrame(grid, width=78, height=86, corner_radius=10,
+                                fg_color=SURFACE, border_width=1,
+                                border_color=BORDER)
+            tile.grid(row=i // 5, column=i % 5, padx=4, pady=4)
+            tile.grid_propagate(False)
+            tile.pack_propagate(False)
+            img = pal_icon2_path(str(pid))
+            ci = ctimg(img, (44, 44)) if img else None
+            if ci is not None:
+                ctk.CTkLabel(tile, text="", image=ci).pack(pady=(8, 0))
+            else:
+                ctk.CTkLabel(tile, text="🐾", font=("Segoe UI Emoji", 18)
+                             ).pack(pady=(8, 0))
+            ctk.CTkLabel(tile, text=f"{pal_disp(str(pid))[:11]}\n\u00d7{cnt}",
+                         font=("Segoe UI", 8), text_color=TEXT_DIM
+                         ).pack(pady=(2, 0))
+        ctk.CTkLabel(body, text=T("Recent activity"), font=(F_DISPLAY, 13,
+                                                            "bold"),
+                     text_color=TEXT, anchor="w").pack(anchor="w",
+                                                       pady=(12, 4))
+        try:
+            with open(EVENTS_JSON, encoding="utf-8") as f:
+                evs = json.load(f)
+        except (OSError, ValueError):
+            evs = []
+        mine = [e for e in evs if name in str(e)][-6:]
+        boxf = ctk.CTkFrame(body, fg_color=SURFACE, corner_radius=10)
+        boxf.pack(fill="x")
+        for e in reversed(mine):
+            ctk.CTkLabel(boxf, text=str(e), font=("Segoe UI", 10),
+                         text_color=TEXT_DIM, anchor="w",
+                         wraplength=500).pack(fill="x", padx=10, pady=3)
+        if not mine:
+            ctk.CTkLabel(boxf, text="—", font=F_SMALL,
+                         text_color=TEXT_DIM).pack(padx=10, pady=6)
+
+    def _explore_backup(self, zpath):
+        """Voyage dans le temps: lit une sauvegarde zip sans restaurer."""
+        self._set_busy(T("Reading backup…"))
+
+        def work():
+            import tempfile
+            tmpd = tempfile.mkdtemp(prefix="psexplore_")
+            try:
+                import zipfile as _zf
+                with _zf.ZipFile(zpath) as z:
+                    for n in z.namelist():
+                        if n.endswith("Level.sav") or "/Players/" in n \
+                                or n.endswith(".sav"):
+                            z.extract(n, tmpd)
+                    lvl = None
+                    for root, _d, files in os.walk(tmpd):
+                        if "Level.sav" in files:
+                            lvl = os.path.join(root, "Level.sav")
+                            break
+                    if not lvl:
+                        raise ValueError("Level.sav absent du zip")
+                    r = subprocess.run(
+                        [TOOLS_PY312, TOOLS_SCAN, os.path.dirname(lvl)],
+                        capture_output=True, text=True, timeout=900,
+                        encoding="utf-8", errors="replace")
+                    line = next((l for l in (r.stdout or "").splitlines()
+                                 if l.startswith("{")), "")
+                    data = json.loads(line)
+            except Exception as e:  # noqa: BLE001
+                self.after(0, lambda: messagebox.showerror(
+                    T("Time travel"), str(e)))
+                self.after(0, lambda: self._flash(None))
+                shutil.rmtree(tmpd, ignore_errors=True)
+                return
+
+            def show():
+                cur = self._last_guild_data or {}
+                cur_inv = {str(i.get("uid", ""))[:8]: i.get("gold", 0)
+                           for i in cur.get("inventory") or []}
+                gt = data.get("game_time") or {}
+                win = ctk.CTkToplevel(self)
+                win.title(T("Time travel") + " — " +
+                          os.path.basename(zpath)[:22])
+                win.geometry("640x520")
+                win.grab_set()
+                body = ctk.CTkFrame(win, fg_color="transparent")
+                body.pack(fill="both", expand=True, padx=14, pady=10)
+                ctk.CTkLabel(body, text="⏳  " + T("World at that moment"),
+                             font=(F_DISPLAY, 16, "bold"),
+                             text_color=TEXT).pack(anchor="w")
+                ctk.CTkLabel(body, text=f"{T('Day')} {gt.get('day', '?')} · "
+                             f"{gt.get('clock', '?')} — "
+                             f"{data.get('facts', {}).get('pals_total', '?')}"
+                             " Pals", font=F_SMALL, text_color=TEXT_DIM,
+                             anchor="w").pack(anchor="w", pady=(0, 8))
+                rows = []
+                for pl in data.get("all_players") or []:
+                    inv = next((i for i in data.get("inventory") or []
+                                if i.get("uid") == pl.get("uid")), {})
+                    g = inv.get("gold", 0)
+                    dg = g - cur_inv.get(str(pl.get("uid", ""))[:8],
+                                         g) if cur_inv else 0
+                    rows.append((str(pl.get("name", "?")), pl.get("level",
+                                 "?"), pl.get("pals", "?"), g, dg))
+                for name, lv, pals, gold, dg in sorted(
+                        rows, key=lambda r: -r[3]):
+                    row = ctk.CTkFrame(body, fg_color=SURFACE, corner_radius=8)
+                    row.pack(fill="x", pady=3)
+                    delta = (f"{'▲' if dg > 0 else '▼'} {abs(dg):,}"
+                             if dg else "—")
+                    ctk.CTkLabel(row, text=f"{name}   ·  Lv{lv}  ·  {pals} "
+                                 f"Pals", font=F_BODY, text_color=TEXT,
+                                 anchor="w").pack(side="left", padx=10,
+                                                  pady=6)
+                    ctk.CTkLabel(row, text=f"\U0001fa99 {gold:,}   {delta}",
+                                 font=F_BODY, text_color=(SEM_GREEN if dg > 0
+                                                          else TEXT_DIM)
+                                 if "SEM_GREEN" in globals() else TEXT_DIM
+                                 ).pack(side="right", padx=10)
+                ctk.CTkLabel(body, text=T("▲/▼ = change since that backup"),
+                             font=F_SMALL, text_color=TEXT_DIM,
+                             anchor="w").pack(anchor="w", pady=(8, 0))
+                self._flash(None)
+            self.after(0, show)
+            shutil.rmtree(tmpd, ignore_errors=True)
+        threading.Thread(target=work, daemon=True).start()
 
     def _open_gift_wizard(self):
         members = self._guild_members()
@@ -6239,6 +7135,22 @@ class App(ctk.CTk):
 
     def _apply_gift(self, gifts, note=""):
         """Stop → backup → gift.py → verify → start → announce. Threaded."""
+        # merge les recompenses en attente (bonus de connexion / succes)
+        pend = self.cfg.get("reward_queue") or []
+        if pend and gifts:
+            by_uid = {g.get("uid"): g for g in gifts}
+            for r in pend:
+                g = by_uid.get(r.get("uid"))
+                if g is None:
+                    gifts = list(gifts) + [dict(r)]
+                else:
+                    g["gold"] = int(g.get("gold") or 0) + \
+                        int(r.get("gold") or 0)
+                    g["items"] = list(g.get("items") or []) + \
+                        list(r.get("items") or [])
+            self.cfg["reward_queue"] = []
+            save_cfg(self.cfg)
+            self._log_event("🎁 Pending rewards merged into this gift")
         if not (os.path.isfile(TOOLS_PY312) and os.path.isfile(TOOLS_GIFT)):
             self._toast("Gift tools missing.", "⚠")
             return
@@ -6265,10 +7177,18 @@ class App(ctk.CTk):
                     json.dump({"gifts": gifts}, f)
                 try:
                     r = subprocess.run(
-                        [TOOLS_PY312, TOOLS_GIFT, world, payload_path],
+                        [TOOLS_PY312, "-u", TOOLS_GIFT, world, payload_path],
                         capture_output=True, text=True, timeout=1800,
                         encoding="utf-8", errors="replace")
-                    out = (r.stdout or "") + (r.stderr or "")
+                    out = ((r.stdout or "") + "\n--- stderr ---\n"
+                            + (r.stderr or ""))
+                    # full log on disk — the event toast only keeps a tail
+                    try:
+                        with open(os.path.join(_APPDATA, "gift_log.txt"),
+                                  "w", encoding="utf-8") as f:
+                            f.write(out)
+                    except OSError:
+                        pass
                 except (OSError, subprocess.SubprocessError) as e:
                     out = str(e)
                 ok = "GIFT_OK" in out
@@ -6373,8 +7293,57 @@ class App(ctk.CTk):
         if data:
             self.q.put(("guild", data, time.time(), False))
 
+    def _check_achievements(self, data):
+        """Succes serveur: paliers d'or/pals/niveau -> recompense en file."""
+        achs = self.cfg.get("achievements") or []
+        if not achs:
+            return
+        inv = {str(i.get("uid", "")): i for i in data.get("inventory") or []}
+        fired = self.cfg.get("ach_fired") or {}
+        changed = False
+        for a in achs:
+            thr = int(a.get("threshold") or 0)
+            if not thr:
+                continue
+            for pl in data.get("all_players") or []:
+                uid = str(pl.get("uid", ""))
+                key = f"{a.get('metric')}|{thr}|{uid}"
+                if fired.get(key):
+                    continue
+                val = {"gold": (inv.get(uid) or {}).get("gold", 0),
+                       "pals": pl.get("pals", 0),
+                       "level": pl.get("level", 0)}.get(a.get("metric"),
+                                                        0) or 0
+                if int(val) >= thr:
+                    fired[key] = datetime.now().strftime("%Y-%m-%d")
+                    changed = True
+                    nm = pl.get("name", uid[:8])
+                    self._queue_reward(uid, gold=int(a.get("reward") or 0),
+                                       why=f"achievement {a.get('metric')}"
+                                           f">={thr} {nm}")
+                    self._log_event(f"🏅 {nm} reached {a.get('metric')} "
+                                    f">= {thr}!")
+                    self._discord(f"🏅 **{nm}** reached a server "
+                                  f"achievement ({a.get('metric')} ≥ "
+                                  f"{thr})! Reward queued.")
+        if changed:
+            self.cfg["ach_fired"] = fired
+            save_cfg(self.cfg)
+
     def _render_guild(self, data, ts=None, cached=False):
         try:
+            self._check_achievements(data)
+            gt = (data or {}).get("game_time") or {}
+            if gt.get("clock"):
+                hh, mm = str(gt.get("clock")).split(":")[:2]
+                gmin = int(hh) * 60 + int(mm)
+                st = self._game_state
+                if st["ts"] and st["ts"] < time.time():
+                    dt_real = time.time() - st["ts"]
+                    dt_game = (gmin - st["min"]) % 1440
+                    if dt_game:
+                        st["rate"] = max(1.0, dt_game / (dt_real / 60))
+                st.update(ts=time.time(), min=gmin, day=gt.get("day") or 0)
             self._last_guild_data = data
             self.btn_scan.configure(state="normal")
             if cached and ts:
@@ -6482,6 +7451,20 @@ class App(ctk.CTk):
             text=f"{len(bases)} base(s)" +
                  (f" · {len(locs)} player position(s)" if locs else "") +
                  " — hover a pin for details")
+
+    def _game_clock_tick(self):
+        try:
+            st = self._game_state
+            if st["ts"]:
+                elapsed = (time.time() - st["ts"]) / 60
+                gmin = int((st["min"] + elapsed * st["rate"]) % 1440)
+                icon = "☀" if 6 * 60 <= gmin < 19 * 60 else "🌙"
+                self._game_clock_lbl.configure(
+                    text=f"⏳ {icon} " + T("Day") + f" {st['day']} · "
+                    f"{gmin // 60:02d}:{gmin % 60:02d}")
+        except Exception:
+            pass
+        self.after(5000, self._game_clock_tick)
 
     def _map_hover(self, event):
         best = None
@@ -6870,7 +7853,7 @@ class App(ctk.CTk):
 
     # ===== Pal box browser =====
     # ----- guild card export -----
-    def _export_guild_card(self):
+    def _export_guild_card(self, weekly=False):
         """Render a shareable guild-summary PNG using the app artwork."""
         data = self._last_guild_data or (load_guild_cache() or {}).get("data") or {}
         members = []
@@ -7429,9 +8412,47 @@ class App(ctk.CTk):
             pass
         time.sleep(120)
 
+    def _open_player_card_by_name(self, name):
+        data = self._last_guild_data or {}
+        uid = next((str(p.get("uid", "")) for p in
+                    data.get("all_players") or []
+                    if p.get("name") == name or
+                    self._disp_name(p.get("name", "")) == name), name)
+        self._player_card(self._disp_name(name), uid)
+
+    def _queue_reward(self, uid, gold=0, items=None, why=""):
+        q = self.cfg.get("reward_queue") or []
+        q.append({"uid": uid, "gold": int(gold), "items": items or [],
+                  "pals": []})
+        self.cfg["reward_queue"] = q
+        save_cfg(self.cfg)
+        self._log_event("🎁 Reward queued (" + (why or "bonus") + ")")
+
     def _on_player_join(self, name, sid):
         disp = self._disp_name(name, sid)
         self._log_event(f"👤 {name} joined")
+        # bonus de connexion (une fois par jour et par joueur)
+        lb = self.cfg.get("login_bonus") or {}
+        if lb.get("enabled"):
+            try:
+                data = self._last_guild_data or {}
+                uid = next((str(p.get("uid", "")) for p in
+                            data.get("all_players") or []
+                            if p.get("name") == name), "")
+                today = datetime.now().strftime("%Y-%m-%d")
+                fired = self.cfg.get("login_fired") or {}
+                if uid and fired.get(uid) != today:
+                    fired[uid] = today
+                    self.cfg["login_fired"] = fired
+                    self._queue_reward(
+                        uid, gold=int(lb.get("gold") or 0),
+                        items=self._parse_items_text(lb.get("items", "")),
+                        why="login bonus " + name)
+                    self._toast(T("Login bonus queued for") + " " + disp
+                                + " — " + T("delivered with the next gift"),
+                                "🎁")
+            except Exception:
+                pass
         self._notify("🎮 " + disp, "joined the server")
         self._discord(f"🎮 **{disp}** joined the server")
         if sid:  # remember name -> steam id (avatars, guild card)
@@ -7598,6 +8619,9 @@ class App(ctk.CTk):
                         continue
                     t = evd.get("time", "")
                     if not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", t):
+                        continue
+                    days = str(evd.get("days") or "1234567")
+                    if str(now.weekday() + 1) not in days:
                         continue
                     key = f"{i}|{now.strftime('%Y-%m-%d')}"
                     if gfired.get(key):
@@ -8109,6 +9133,9 @@ ul{{padding-left:18px;margin:6px 0}} li{{margin:2px 0}}
             menu = tk.Menu(self, tearoff=0)
             menu.add_command(label=T("Kick"), command=lambda pp=p: self._kick_p(pp))
             menu.add_command(label=T("Ban"), command=lambda pp=p: self._ban_p(pp))
+            menu.add_command(
+                label="🪪  " + T("Player card"),
+                command=lambda pp=p: self._open_player_card_by_name(pp[0]))
             menu.add_command(label="🏷  " + T("Rename"), command=lambda pp=p:
                              self._rename_player(pp))
 

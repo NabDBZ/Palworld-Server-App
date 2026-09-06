@@ -78,9 +78,13 @@ for pid, v in pal_data.items():
         fr = fr.get("Name") or pid
     if isinstance(en, dict):
         en = en.get("Name") or fr
+    st = v.get("Stats") or {}
     pal_meta[pid] = {"fr": fr, "en": en, "icon": icon,
                      "deck": v.get("PaldeckIndex") or 0,
-                     "el": v.get("Elements") or []}
+                     "dsuf": str(v.get("PaldeckSuffix") or ""),
+                     "el": v.get("Elements") or [],
+                     "hp": st.get("HP") or 0, "atk": st.get("ATK") or 0,
+                     "def": st.get("DEF") or 0}
 print("pal_meta entries (with icon):", len(pal_meta))
 
 for name, meta in (("item_meta.json", item_meta), ("pal_meta.json", pal_meta)):

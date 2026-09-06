@@ -237,5 +237,9 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
         print("GIFT_FAIL " + str(e)[:200])
+        sys.stdout.flush()
         sys.exit(1)
