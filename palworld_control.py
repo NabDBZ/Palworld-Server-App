@@ -1076,6 +1076,24 @@ def load_breeding(force=False):
     return _BREEDING
 
 
+BREEDING_RECIPES_JSON = os.path.join(_APPDATA,
+                                         "breeding_recipes.json")
+_BREEDING_RECIPES = None
+
+
+def load_breeding_recipes(force=False):
+    """Official special breeding recipes (parent families -> child),
+    extracted from the game data by the editor asset set."""
+    global _BREEDING_RECIPES
+    if _BREEDING_RECIPES is None or force:
+        try:
+            with open(BREEDING_RECIPES_JSON, encoding="utf-8") as f:
+                _BREEDING_RECIPES = json.load(f)
+        except (OSError, ValueError):
+            _BREEDING_RECIPES = {"recipes": [], "fam_members": {}}
+    return _BREEDING_RECIPES
+
+
 def _paldex_old_id(pid):
     """CharacterID -> ancien numero paldex (via noms, table communautaire)."""
     m = _pal_meta_of(pid) or {}
@@ -1090,6 +1108,15 @@ def _paldex_old_id(pid):
 
 def breeding_child(id_a, id_b):
     """CharacterID enfant de deux parents (None si inconnu du dataset)."""
+    # 1) recettes speciales officielles (famille x famille -> enfant)
+    rec = load_breeding_recipes()
+    fams = {p: str((_pal_meta_of(p) or {}).get("fam") or "")
+            for p in (id_a, id_b)}
+    for fa, fb, child in rec.get("recipes", []):
+        if {fa, fb} == {fams[id_a], fams[id_b]} and \
+                fams[id_a] and fams[id_b]:
+            if not child.startswith(("BOSS_", "GYM_", "RAID_")):
+                return child
     ka, kb = _paldex_old_id(id_a), _paldex_old_id(id_b)
     if not ka or not kb:
         return None
@@ -1218,6 +1245,7 @@ def bootstrap_gift_assets():
             pal_meta[pid] = {"fr": fr, "en": en, "icon": icon,
                              "deck": v.get("PaldeckIndex") or 0,
                              "dsuf": str(v.get("PaldeckSuffix") or ""),
+                             "fam": str(v.get("FamilyID") or ""),
                              "el": v.get("Elements") or [],
                              "hp": st.get("HP") or 0,
                              "atk": st.get("ATK") or 0,
@@ -1227,6 +1255,22 @@ def bootstrap_gift_assets():
             with open(os.path.join(_APPDATA, name), "w",
                       encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False)
+        recipes = []
+        fam_members = {}
+        for pid, v in pal_data.items():
+            fam_members.setdefault(str(v.get("FamilyID") or ""),
+                                   []).append(pid)
+        for pid, v in pal_data.items():
+            if v.get("Invalid"):
+                continue
+            for r in (v.get("Breeding") or {}).get("UniqueRecipes") or []:
+                fa = str(r.get("ParentTribeA") or "").split("::")[-1]
+                fb = str(r.get("ParentTribeB") or "").split("::")[-1]
+                if fa and fb and fa in fam_members and fb in fam_members:
+                    recipes.append([fa, fb, pid])
+        with open(os.path.join(_APPDATA, "breeding_recipes.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"recipes": recipes, "fam_members": fam_members}, f)
         try:
             from PIL import Image
             for d in (ITEM_ICON_DIR, PAL_ICON2_DIR):
@@ -2007,6 +2051,8 @@ STR_FR = {
     "Element": "Élément",
     "All elements": "Tous les éléments",
     "Filter Pals by element": "Filtrer les Pals par élément",
+    "How to get a Pal…": "Comment obtenir un Pal…",
+    "Show parent pairs": "Voir les paires parentales",
     # --- v18 ---
     "Breeding tree": "Arbre d'élevage",
     "Click two Pals in the grid to see their child — right-click for the "
@@ -4606,11 +4652,11 @@ class App(ctk.CTk):
                           variable=self._pd_el_var, fg_color=SURFACE,
                           command=lambda _v: self._pd_render()).pack(
             side="left", padx=(8, 0))
-        ctk.CTkButton(top, text="🧬  " + T("Breeding calculator"), height=34,
+        ctk.CTkButton(top, text="🎯  " + T("How to get a Pal…"), height=34,
                       corner_radius=10, fg_color=ACCENT,
                       hover_color=ACCENT_HOVER, text_color="#ffffff",
-                      command=self._breeding_dialog).pack(side="left",
-                                                          padx=(8, 0))
+                      command=self._breeding_pick).pack(side="left",
+                                                        padx=(8, 0))
         self._pd_grid = ctk.CTkScrollableFrame(wrap, fg_color="transparent")
         self._pd_grid.pack(fill="both", expand=True)
         self._pd_inner = ctk.CTkFrame(self._pd_grid, fg_color="transparent")
@@ -4812,6 +4858,19 @@ class App(ctk.CTk):
         tname = m.get("fr") or m.get("en") or target
         tkey = id_by_name.get(_norm_key(tname))
         pairs_out = []
+        # paires issues des recettes speciales (famille -> membres)
+        tfam = str(m.get("fam") or "")
+        rec = load_breeding_recipes()
+        for fa, fb, child in rec.get("recipes", []):
+            if child != target:
+                continue
+            for ca in rec.get("fam_members", {}).get(fa, []):
+                if ca.startswith(("BOSS_", "GYM_", "RAID_")):
+                    continue
+                for cb in rec.get("fam_members", {}).get(fb, []):
+                    if cb.startswith(("BOSS_", "GYM_", "RAID_")):
+                        continue
+                    pairs_out.append((ca, cb))
         def _nm(x):
             try:
                 return name_by_id.get(str(int(x)))
@@ -4907,14 +4966,38 @@ class App(ctk.CTk):
                       command=lambda: (win.destroy(),
                                        self._breeding_parents(pid))
                       ).pack(fill="x", pady=(0, 6))
-        ctk.CTkButton(btns, text="🧬  " + T("Breed from this Pal"),
-                      height=36, corner_radius=10, fg_color=ACCENT,
-                      hover_color=ACCENT_HOVER, text_color="#ffffff",
-                      command=lambda: (win.destroy(),
-                                       self._breeding_dialog(pid))
-                      ).pack(fill="x")
 
-    def _breeding_dialog(self, preset=None):
+
+    def _breeding_pick(self):
+        pm = load_pal_meta()
+        ids = [p for p in pm if not p.startswith(("BOSS_", "RAID_", "GYM_"))]
+        ids.sort(key=lambda p: (pm[p].get("deck") or 999, pm[p].get("fr") or p))
+        names = [str(pm[p].get("fr") or p) for p in ids]
+        win = ctk.CTkToplevel(self)
+        win.title(T("How to get this Pal"))
+        win.geometry("440x180")
+        win.grab_set()
+        ctk.CTkLabel(win, text="🎯  " + T("How to get this Pal"),
+                     font=(F_DISPLAY, 16, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=16, pady=(14, 4))
+        om = ctk.CTkComboBox(win, values=names, width=340)
+        om.set(names[0])
+        om.pack(padx=16, pady=6, anchor="w")
+
+        def go():
+            nm = om.get()
+            pid = next((p for p in ids
+                        if str(pm[p].get("fr") or p) == nm), None)
+            win.destroy()
+            if pid:
+                self._breeding_parents(pid)
+
+        ctk.CTkButton(win, text=T("Show parent pairs"), height=36,
+                      corner_radius=10, fg_color=ACCENT,
+                      hover_color=ACCENT_HOVER, text_color="#ffffff",
+                      command=go).pack(padx=16, pady=8, anchor="w")
+
+    def _breeding_dialog_unused(self, preset=None):
         pm = load_pal_meta()
         ids = [p for p in pm if not p.startswith(("BOSS_", "RAID_", "GYM_"))]
         ids.sort(key=lambda p: (pm[p].get("deck") or 999, pm[p].get("fr") or p))

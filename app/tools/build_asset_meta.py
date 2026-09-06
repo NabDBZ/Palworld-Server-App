@@ -82,10 +82,30 @@ for pid, v in pal_data.items():
     pal_meta[pid] = {"fr": fr, "en": en, "icon": icon,
                      "deck": v.get("PaldeckIndex") or 0,
                      "dsuf": str(v.get("PaldeckSuffix") or ""),
+                     "fam": str(v.get("FamilyID") or ""),
                      "el": v.get("Elements") or [],
                      "hp": st.get("HP") or 0, "atk": st.get("ATK") or 0,
                      "def": st.get("DEF") or 0}
 print("pal_meta entries (with icon):", len(pal_meta))
+
+# recettes speciales d'elevage (UniqueRecipes du jeu, famille->famille)
+recipes = []
+fam_members = {}
+for pid, v in pal_data.items():
+    fam_members.setdefault(str(v.get("FamilyID") or ""), []).append(pid)
+for pid, v in pal_data.items():
+    if v.get("Invalid"):
+        continue
+    for r in (v.get("Breeding") or {}).get("UniqueRecipes") or []:
+        fa = str(r.get("ParentTribeA") or "").split("::")[-1]
+        fb = str(r.get("ParentTribeB") or "").split("::")[-1]
+        if fa and fb and fa in fam_members and fb in fam_members:
+            recipes.append([fa, fb, pid])
+with open(os.path.join(APPDATA, "breeding_recipes.json"), "w",
+          encoding="utf-8") as f:
+    json.dump({"recipes": recipes, "fam_members": fam_members}, f,
+              ensure_ascii=False)
+print("breeding_recipes.json:", len(recipes), "recettes")
 
 for name, meta in (("item_meta.json", item_meta), ("pal_meta.json", pal_meta)):
     with open(os.path.join(APPDATA, name), "w", encoding="utf-8") as f:
